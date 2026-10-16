@@ -47,7 +47,10 @@ def sha256_of(path: Path) -> str:
 
 
 def run(cmd: List[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=True, text=True, capture_output=True, **kw)
+    out = subprocess.run(cmd, text=True, capture_output=True, **kw)
+    if out.returncode != 0:
+        raise SystemExit(f"command failed ({out.returncode}): {' '.join(cmd)}\n{(out.stderr or out.stdout).strip()[-800:]}")
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -68,10 +71,9 @@ def fetch_repo(name: str, url: str, commit: str, work: Path) -> Path:
     run(["git", "init", "-q", str(repo)])
     run(["git", "-C", str(repo), "remote", "add", "origin", url])
     log(f"{name}: fetching {commit[:10]} from {url}")
-    try:   # GitHub serves single commits by hash; this keeps the transfer to one tree
-        run(["git", "-C", str(repo), "fetch", "-q", "--depth", "1", "origin", commit])
-    except subprocess.CalledProcessError:
-        log(f"{name}: shallow fetch of the commit refused, fetching the full history")
+    shallow = subprocess.run(["git", "-C", str(repo), "fetch", "-q", "--depth", "1", "origin", commit], text=True, capture_output=True)
+    if shallow.returncode != 0:   # GitHub serves single commits by hash; other hosts may refuse -> full history
+        log(f"{name}: shallow fetch of the commit refused ({shallow.stderr.strip()[-120:]}), fetching the full history")
         run(["git", "-C", str(repo), "fetch", "-q", "origin"])
     run(["git", "-C", str(repo), "-c", "advice.detachedHead=false", "checkout", "-q", commit])
     return repo
@@ -116,13 +118,21 @@ def download(url: str, target: Path, sha256: Optional[str], expected_bytes: Opti
     tmp = target.with_suffix(target.suffix + ".part")
     log(f"download: {url} -> {target}")
     req = urllib.request.Request(url, headers={"User-Agent": "harnessttt-setup-dataset/1.0"})
-    h = hashlib.sha256()
-    size = 0
-    with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, "wb") as out:
-        for chunk in iter(lambda: resp.read(1 << 20), b""):
-            out.write(chunk)
-            h.update(chunk)
-            size += len(chunk)
+    for attempt in range(1, 4):   # a stalled connection is retried from the start (the files are < 250 MB)
+        h = hashlib.sha256()
+        size = 0
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, "wb") as out:
+                for chunk in iter(lambda: resp.read(1 << 20), b""):
+                    out.write(chunk)
+                    h.update(chunk)
+                    size += len(chunk)
+            break
+        except (OSError, urllib.error.URLError) as exc:
+            if attempt == 3:
+                tmp.unlink(missing_ok=True)
+                raise SystemExit(f"download {url} failed after 3 attempts: {exc}")
+            log(f"download: attempt {attempt} failed ({exc}); retrying")
     digest = h.hexdigest()
     if sha256 is not None and digest != sha256:
         tmp.unlink(missing_ok=True)
@@ -160,8 +170,12 @@ def verify(dest: Path, tiers: List[str], checksums: Dict) -> int:
 
 def write_checksums(dest: Path, spec: Dict, out: Path) -> None:
     """Developer step: record sha256 of every file a build produces (from a snapshot built or validated by hand)."""
+    import fnmatch
     skip = {"MANIFEST_eft.json", "README.md", "DATA_PROVENANCE.json"}
-    generated = tuple(g.rstrip("*") for g in spec.get("generated_not_checksummed", []))
+    generated = tuple(spec.get("generated_not_checksummed", []))
+
+    def is_generated(rel: str) -> bool:
+        return any(fnmatch.fnmatch(rel, g) or rel.startswith(g.rstrip("*")) for g in generated)
     rules = []
     for repo in spec["repos"]:
         for _src, dst in repo["copy"]:
@@ -179,7 +193,7 @@ def write_checksums(dest: Path, spec: Dict, out: Path) -> None:
         rel = path.relative_to(dest).as_posix()
         if "__pycache__" in rel or rel.endswith((".pyc", ".pyo")) or rel in skip or rel.endswith("/SOURCE.json") or ".DS_Store" in rel:
             continue
-        if any(rel.startswith(g) for g in generated):
+        if is_generated(rel):
             continue
         tier = next((t for dst, t in rules if rel == dst or rel.startswith(dst.rstrip("/") + "/")), None)
         if tier is None:
@@ -224,9 +238,10 @@ def build(dest: Path, tiers: List[str], work: Path, spec: Dict, no_download: boo
         rec["path"] = d["path"]
         provenance["files"].append(rec)
     eph = dest / "raw/simpletes-47d3413/datasets/astrodynamics/data/ephemerides"
-    if eph.is_dir():   # the astrodynamics tasks read this marker written by their own download script
-        lines = [f"{d['sha256']}  {Path(d['path']).name}" for d in spec["downloads"] if d["path"].startswith(eph.relative_to(dest).as_posix())]
-        (eph / ".verified").write_text("\n".join(lines) + "\n")
+    eph_files = [d for d in spec["downloads"] if d["path"].startswith("raw/simpletes-47d3413/datasets/astrodynamics/data/ephemerides/")]
+    if eph.is_dir() and all((dest / d["path"]).is_file() for d in eph_files):
+        # the astrodynamics tasks read this marker, written by their own download script in the same format
+        (eph / ".verified").write_text("\n".join(f"{d['sha256']}  {Path(d['path']).name}" for d in eph_files) + "\n")
     shutil.copy2(CFG / "MANIFEST_eft.json", dest / "MANIFEST_eft.json")
     shutil.copy2(CFG / "README.snapshot.md", dest / "README.md")
     (dest / "DATA_PROVENANCE.json").write_text(json.dumps(provenance, indent=1) + "\n")
@@ -237,10 +252,13 @@ def build(dest: Path, tiers: List[str], work: Path, spec: Dict, no_download: boo
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dest", default=os.environ.get("SAH_DATA_ROOT") or str(ROOT / "dataset" / "self_adapt_harness"))
+    ap.add_argument("--dest", default=os.environ.get("SAH_DATASET_ROOT") or os.environ.get("SAH_DATA_ROOT") or str(ROOT / "dataset" / "self_adapt_harness"),
+                    help="snapshot directory (default: $SAH_DATASET_ROOT, $SAH_DATA_ROOT, else <repo>/dataset/self_adapt_harness)")
     ap.add_argument("--tiers", default="core", help="comma-separated subset of core,gpu,extra (default core)")
-    ap.add_argument("--work", default=None, help="scratch dir for the git checkouts (default: a temporary dir, removed afterwards)")
-    ap.add_argument("--keep-work", action="store_true", help="keep the checkouts under --work for a rebuild")
+    ap.add_argument("--work", default=str(ROOT / ".deps" / "dataset_sources"),
+                    help="where the upstream checkouts live between runs (default <repo>/.deps/dataset_sources, git-ignored); a rebuild reuses them")
+    ap.add_argument("--keep-work", action="store_true", help="(default behaviour; kept for compatibility)")
+    ap.add_argument("--clean-work", action="store_true", help="remove the checkouts after a successful build")
     ap.add_argument("--no-download", action="store_true", help="skip the data downloads (verification then reports them missing)")
     ap.add_argument("--verify", action="store_true", help="only verify --dest against config/dataset/CHECKSUMS.json")
     ap.add_argument("--write-checksums", action="store_true", help="developer: regenerate CHECKSUMS.json from --dest")
@@ -259,14 +277,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     checksums = json.loads((CFG / "CHECKSUMS.json").read_text())
     if args.verify:
         return verify(dest, tiers, checksums)
-    work = Path(args.work).expanduser().resolve() if args.work else Path(tempfile.mkdtemp(prefix="harnessttt_dataset_"))
+    if dest.is_dir() and verify(dest, tiers, checksums) == 0 and not args.no_download:
+        log(f"{dest} already verifies for tiers {','.join(tiers)}; nothing to build (use --verify to re-check)")
+        return 0
+    work = Path(args.work).expanduser().resolve()
     work.mkdir(parents=True, exist_ok=True)
-    try:
-        build(dest, tiers, work, spec, args.no_download)
-    finally:
-        if not args.keep_work and not args.work:
-            shutil.rmtree(work, ignore_errors=True)
+    build(dest, tiers, work, spec, args.no_download)
     rc = verify(dest, tiers, checksums)
+    if rc == 0 and args.clean_work:
+        shutil.rmtree(work, ignore_errors=True)
     if rc == 0:
         log("every file matches config/dataset/CHECKSUMS.json; now run: python3 scripts/tools/build_task_text_registry.py --check")
     return rc

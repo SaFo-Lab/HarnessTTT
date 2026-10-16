@@ -51,7 +51,7 @@ pip install -e .                                   # packages: harnessttt, inner
 python3 scripts/setup/setup_dataset.py             # task snapshot from pinned public sources (+ --tiers core,gpu for the kernel tasks)
 cp config/local.env.example config/local.env       # site paths: executor checkpoint, container image, envs, RUN_ROOT, Slurm account
 bash scripts/setup/setup_deps.sh                   # NexAU agent runtime (pinned commit + patch) and Megatron-LM
-bash scripts/setup/setup_runtime_env.sh            # Python 3.12 env for the executor runtime (NexAU + evaluator deps)
+bash scripts/setup/setup_runtime_env.sh            # Python 3.12 env for the executor runtime (NexAU + evaluator deps); run it where python3.12 exists, e.g. inside your container
 bash scripts/setup/setup_slime.sh                  # slime (pinned, patched) — only needed to train the proposer
 bash scripts/setup/preflight.sh                    # checks pins, dataset checksums, site settings, imports (--executor-only skips training)
 ```
@@ -150,7 +150,7 @@ print(row["best_score"], row["out_dir"])
 
 ### Bring your own task
 
-Tasks are registered by files, not by a Python call. A task is a folder with a seed program whose editable region is delimited by `# EVOLVE-BLOCK-START` / `# EVOLVE-BLOCK-END`, an `evaluator.py` that returns `combined_score` (higher is better) and `validity`, and a `config.yaml` whose `prompt.system_message` is the task description. Add a record to `config/dataset/MANIFEST_eft.json` (installed into the snapshot by `setup_dataset.py`; or edit `dataset/self_adapt_harness/MANIFEST_eft.json` directly), rebuild the task-text registry, and give the pipeline an alias in `src/pipeline.py` (`TASK_IDS`, and `DISPLAY` for the native metric). Optional record fields: `per_eval_timeout_s`, `python_exe`, `extra_pythonpath`, `env` (paths may use `${VARIABLES}` from `config/local.env`):
+Tasks are registered by files, not by a Python call. A task is a folder with a seed program whose editable region is delimited by `# EVOLVE-BLOCK-START` / `# EVOLVE-BLOCK-END`, an `evaluator.py` that returns `combined_score` (higher is better) and `validity`, and a `config.yaml` whose `prompt.system_message` is the task description. Add a record to `config/dataset/MANIFEST_eft.json` (installed into the snapshot by `setup_dataset.py`; or edit `dataset/self_adapt_harness/MANIFEST_eft.json` directly), rebuild the task-text registry, and give the task an alias in `src/inner/tasks/aliases.py` (`TASK_IDS`, and `DISPLAY` for the native metric). Optional record fields: `per_eval_timeout_s`, `python_exe`, `extra_pythonpath`, `env` (paths may use `${VARIABLES}` from `config/local.env`):
 
 ```json
 {"task_id": "eft__math__circle_packing", "rel_path": "raw/eft-aac2e79/benchmarks/math/circle_packing",
@@ -164,7 +164,7 @@ python3 scripts/tools/build_task_text_registry.py     # refresh config/task_text
 python3 -c "import harnessttt; print(harnessttt.load_task('eft__math__circle_packing').evaluator_path)"
 ```
 
-The evaluator-call budget is `max_metric_calls` (pipeline `max_evals`), the per-evaluation timeout comes from the task's `config.yaml` (`per_eval_timeout_s`).
+The evaluator-call budget is `max_metric_calls` (pipeline `max_evals`); the per-evaluation timeout comes from the task's `config.yaml` (`evaluator.timeout`) unless the manifest record sets `per_eval_timeout_s`.
 
 ---
 
@@ -254,7 +254,7 @@ Load one with `huggingface_hub.snapshot_download(..., allow_patterns=["harnesses
 
 ## Release Scope
 
-**Included:** the evolve loop (`src/pipeline.py`, Slurm workers and templates in `scripts/pipeline/`); the proposer-side package H1 with its gates (`src/outer/harness`, `src/outer/safety/`: static AST gates over a shared code policy, tool-schema guard, resource-limited tool and middleware self-tests, leak guard), the executor-side containment of generated tools (`src/inner/harness/tools/custom_runtime.py`: whitelisted imports only, no I/O builtins, guarded module attributes), rewards, advantages and the strict program ratchet (`src/outer/reward/`, `src/outer/rounds/`); the executor runtime with the initial harness (`src/inner/`); the proposer update (`src/trainer/` plus the slime patch in `scripts/patches/`); contract tests that run the whole loop without GPUs (`pytest scripts/tests`); pinned dependencies (`config/dependencies.lock.json`); the dataset recipe (`config/dataset/`: sources, manifest, overlay, checksums); example lineage configs (`config/pipelines/`).
+**Included:** the evolve loop (`src/pipeline.py`, Slurm workers and templates in `scripts/pipeline/`); the proposer-side package H1 with its gates (`src/outer/harness`, `src/outer/safety/`: static AST gates over a shared code policy, tool-schema guard, resource-limited tool and middleware self-tests, leak guard), the executor-side containment of generated tools (`src/inner/harness/tools/custom_runtime.py`: the static gate re-run at load, whitelisted imports only, no I/O builtins, guarded module attributes, no string-driven attribute lookup). This is defence in depth against a misbehaving proposer, not an OS sandbox: run rollout jobs in a container without credentials, as the Slurm templates do, rewards, advantages and the strict program ratchet (`src/outer/reward/`, `src/outer/rounds/`); the executor runtime with the initial harness (`src/inner/`); the proposer update (`src/trainer/` plus the slime patch in `scripts/patches/`); contract tests that run the whole loop without GPUs (`pytest scripts/tests`); pinned dependencies (`config/dependencies.lock.json`); the dataset recipe (`config/dataset/`: sources, manifest, overlay, checksums); example lineage configs (`config/pipelines/`).
 
 **Not included:** the task snapshot payload (`dataset/self_adapt_harness/`, rebuilt from public sources by `scripts/setup/setup_dataset.py`), the slime and NexAU checkouts (fetched and patched by `scripts/setup/`), model weights, the container image and Python environments (site payloads referenced from `config/local.env`), the campaign run directories and their manifests, and per-task evolved packages (released on Hugging Face instead). Two things the paper describes are not exposed as options here: a no-training *context* mode (the loop always trains the proposer between rounds), and a custom seed harness (`optimize()` starts from `src/inner/harness`).
 

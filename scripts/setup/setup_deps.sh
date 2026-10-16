@@ -22,10 +22,14 @@ clone_pin(){ local url=$1 commit=$2 target=$3
   fi; }
 if [ "$DO_NEXAU" = 1 ]; then
   clone_pin "$(field nexau.url)" "$(field nexau.commit)" "$NEXAU_ROOT"
-  PATCH="$HARNESSTTT_ROOT/$(field nexau.patch.path)"; expected=$(field nexau.patch.patched_diff_sha256)
-  observed=$(git -C "$NEXAU_ROOT" diff | sha256sum | awk '{print $1}')
-  if [ "$observed" != "$expected" ]; then git -C "$NEXAU_ROOT" apply "$PATCH"; observed=$(git -C "$NEXAU_ROOT" diff | sha256sum | awk '{print $1}'); fi
-  [ "$observed" = "$expected" ] || { echo "NexAU patched diff mismatch: expected=$expected observed=$observed" >&2; exit 2; }
+  PATCH="$HARNESSTTT_ROOT/$(field nexau.patch.path)"
+  [ "$(sha256sum "$PATCH" | awk '{print $1}')" = "$(field nexau.patch.sha256)" ] || { echo "patch file $PATCH does not match config/dependencies.lock.json" >&2; exit 2; }
+  if git -C "$NEXAU_ROOT" apply --check --reverse "$PATCH" 2>/dev/null; then echo "NexAU patch already applied"
+  elif git -C "$NEXAU_ROOT" apply --check "$PATCH" 2>/dev/null; then git -C "$NEXAU_ROOT" apply "$PATCH"; echo "NexAU patch applied"
+  else echo "NexAU checkout $NEXAU_ROOT neither has the patch applied nor accepts it cleanly (local modifications?)" >&2; exit 2; fi
+  while IFS=$'\t' read -r rel needle; do grep -Fq -- "$needle" "$NEXAU_ROOT/$rel" || { echo "NexAU patch needle missing: $needle ($rel)" >&2; exit 2; }; done \
+    < <(python3 -c 'import json,sys
+for rel, needle in json.load(open(sys.argv[1]))["nexau"]["needles"]: print(f"{rel}\t{needle}")' "$LOCK")
   echo "NexAU ready: $NEXAU_ROOT @ $(git -C "$NEXAU_ROOT" rev-parse --short HEAD) + nexau_transport.patch"
 fi
 if [ "$DO_MEG" = 1 ]; then

@@ -17,8 +17,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      # the tests that need neither the task snapshot nor the NexAU runtime: the evolve loop against the fake Slurm,
-      # the public API, templates, dataset recipe, LLM override contract
-      - run: >
-          pytest -q scripts/tests/test_pipeline.py scripts/tests/test_harnessttt_api.py scripts/tests/test_harnessttt_layout.py
-          scripts/tests/test_dataset_setup.py scripts/tests/test_llm_override.py scripts/tests/test_slime_training_contract.py
+      # the whole contract suite: the evolve loop runs against the fake Slurm with a one-task fixture snapshot; tests that
+      # need the NexAU runtime or the real task snapshot skip
+      - run: pytest -q scripts/tests

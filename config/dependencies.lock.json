@@ -62,7 +62,7 @@
   "patch": {
    "path": "scripts/patches/nexau/nexau_transport.patch",
    "sha256": "a0cd3a712a676c1e68d156e8117cd447921524eb45a2110e26e81cf95ce0f724",
-   "patched_diff_sha256": "eb3ad917bcb702d7fcdbe24f94246b10b74b4928f12d1f586baf6e88d4561dd7"
+   "applied_check": "git apply --check --reverse (applied) / git apply --check (applicable); needles verified"
   },
   "needles": [
    [

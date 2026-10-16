@@ -655,16 +655,6 @@
    "sha256": "96a9e50991b3851b7fb4ec9cbc709af99c08e557d4d9b3992deb09d093e816de",
    "tier": "extra"
   },
-  "raw/simpletes-47d3413/datasets/open_problems_bio/denoising/denoising_datasets/pancreas/pancreas_test_seed42.npy": {
-   "bytes": 240203624,
-   "sha256": "d8d77dfbc15429eb4f22c9da068d0a8be763710ea42cc88f64b5228731162f61",
-   "tier": "extra"
-  },
-  "raw/simpletes-47d3413/datasets/open_problems_bio/denoising/denoising_datasets/pancreas/pancreas_train_seed42.npy": {
-   "bytes": 240203624,
-   "sha256": "0f1ad92f8f47323d8b4ccf0ab83e88b8010b55f59e0224e66988d84f9a526f69",
-   "tier": "extra"
-  },
   "raw/simpletes-47d3413/datasets/open_problems_bio/denoising/evaluator.py": {
    "bytes": 16551,
    "sha256": "5af414634c9ced1f6aa319ace395df22ba68c6eef40de9002397c10e647c9154",

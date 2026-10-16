@@ -99,17 +99,20 @@ available and is documented in `scripts/pipeline/README.md`.
 - **Fixed ports are forbidden.** vLLM binds with `SO_REUSEPORT`; two jobs on one node sharing `127.0.0.1:8800` silently
   split one proposer's traffic across two models.  `worker_round.sh` picks a per-job port range and accepts a replica only
   when its pid is alive and `GET /v1/models` reports the model root this job launched.
-- **GPU cap and queue depth** are enforced in `chain.sh`; canonical jobs use the low QOS (`preflight.sh` fails otherwise).
+- **GPU cap and queue depth** are enforced by the runner (`HARNESSTTT_GPU_CAP` / `HARNESSTTT_MAX_JOBS`, or a `GPU_CAP` file in the campaign dir) and by `chain.sh`. Slurm account, partition and QOS are optional (`HTT_SLURM_*` empty = cluster default); set `HARNESSTTT_REQUIRE_LOW_QOS=1` to make preflight and the runner insist on a `*_low` QOS.
+- **Resources per job**: `round_gpus` (+ `eval_gpus`, `vllm_tp`) with `round_cpus` / `round_mem` (default 12 CPUs and 75-100 GB per GPU), `train_gpus` with `train_cpus` / `train_mem` (default `--mem=0`, the whole node). `prepare()` renders the round, training (and baseline) scripts and runs `sbatch --test-only` on them, so an unsatisfiable layout, account, partition or QOS is reported before round 1. The run dir records `GPUS` (integer) and `GPU_LAYOUT` (full layout).
+- **Clusters without job accounting**: when a job has left the queue and `sacct` has no record, the runner treats complete artefacts as COMPLETED and otherwise waits at most 15 minutes before giving up on the job.
+- **Jobs that hit their wall limit or run out of memory** (`TIMEOUT`, `OUT_OF_MEMORY`, `DEADLINE`) are not resubmitted unchanged: the runner stops with the setting to raise (`round_time` / `train_time`, `round_mem` / `train_mem`) or lower (`k`, `max_evals`, `token_budget`). A job script that fails before `srun` (missing image, dirty tree: `[sbatch] ...` in `out/*.err`) stops the runner as a configuration error.
 - **Executor stays frozen**: rollouts always run on `SAH_MODEL_PATH`; only the proposer pool changes.
 
-## Verification performed at migration (2026-09-24/25)
+## Verification performed before release
 
 `scripts/setup/preflight.sh` passed (slime pin + 8 needles, dataset manifest, NexAU pin + patch, Megatron-LM, payloads,
 QOS, imports of `inner`/`outer`/`trainer` with 15 tasks from `dataset/`); `outer.rounds.outer_round collect` replayed on
 recorded ablation rounds through this tree reproduced `grpo_batch.jsonl`, `round_summary.json`, `best_programs_after.json`
 and the ratchet audit exactly; `trainer/grpo_to_replay.py` reproduced the recorded training inputs byte-for-byte;
 `chain.sh` dry runs (stub `sbatch`) generated valid round/train scripts; `train_worker.sh --dry-run` reproduced the
-recorded slime command up to the intended path/module changes.  Details in the migration report of 2026-09-25.
+recorded slime command up to the intended path/module changes.
 
 ## Origin
 

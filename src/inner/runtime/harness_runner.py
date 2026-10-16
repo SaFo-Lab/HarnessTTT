@@ -96,6 +96,29 @@ def _expected_generated_middlewares(agent_yaml: Path) -> List[str]:
     return names
 
 
+def _gate_generated_middlewares(harness_dir: Optional[Path], names: List[str]) -> Optional[str]:
+    """Static gate over the user hook of every generated middleware before NexAU imports the module with full builtins.
+    Returns an error message (the rollout becomes a harness_error) or None."""
+    if harness_dir is None or not names:
+        return None
+    import re as _re
+    try:
+        from outer.safety.static_gates import check_middleware_code
+    except Exception:
+        return None
+    for name in names:
+        path = Path(harness_dir) / "middlewares" / f"{name}.py"
+        if not path.is_file():
+            return f"generated middleware {name}: {path} is missing"
+        src = path.read_text(encoding="utf-8", errors="replace")
+        m = _re.search(r"# --USER-HOOK-START--\n(.*?)\n# --USER-HOOK-END--", src, _re.DOTALL)
+        hook = m.group(1) if m else src
+        ok, errors = check_middleware_code(hook, "before_model")
+        if not ok:
+            return f"generated middleware {name} rejected by the static gate: {'; '.join(errors)[:400]}"
+    return None
+
+
 def _expected_generated_components(agent_yaml: Path) -> Dict[str, Dict[str, str]]:
     payload = yaml.safe_load(Path(agent_yaml).read_text()) or {}
     tools: Dict[str, str] = {}
@@ -670,8 +693,11 @@ def run_task(
 
     stop_reason, err, trajectory = "completed", None, None
     agent = None
+    middleware_gate_error = _gate_generated_middlewares(harness_dir, expected_middlewares)
     with session_scope(session):
         try:
+            if middleware_gate_error:
+                raise RuntimeError(middleware_gate_error)
             agent = Agent(config=config)
             agent.run(message=_initial_message(
                 task,

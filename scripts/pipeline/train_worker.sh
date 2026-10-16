@@ -46,8 +46,10 @@ if [ -e "$TRAIN_DIR/FAILED" ] || [ -e "$TRAIN_DIR/ckpt" ] || [ -e "$TRAIN_DIR/me
   log "archived previous attempt to $arch"
 fi
 mkdir -p "$TRAIN_DIR/debug"
-test -d "$SLIME_ROOT"; test -d "$MEGATRON_ROOT"; test -d "$TFPATCH"; test -s "$REPLAY"; test -s "$TRAINER/bound_replay.py"
-if [ "$DRY" != 1 ]; then test -x "$TRAIN_ENV/bin/python"; nvidia-smi -L | tee "$TRAIN_DIR/nvidia-smi-L.txt"; fi
+need(){ [ -e "$1" ] || { log "missing: $2 ($1)"; exit 64; }; }
+need "$SLIME_ROOT" "slime checkout SLIME_ROOT"; need "$MEGATRON_ROOT" "Megatron-LM MEGATRON_ROOT"; need "$TFPATCH" "trainer tfpatch dir"
+need "$REPLAY" "training replay"; [ -s "$REPLAY" ] || { log "empty training replay $REPLAY"; exit 64; }; need "$TRAINER/bound_replay.py" "bound_replay.py"
+if [ "$DRY" != 1 ]; then need "$TRAIN_ENV/bin/python" "training env python TRAIN_ENV/bin/python"; nvidia-smi -L | tee "$TRAIN_DIR/nvidia-smi-L.txt"; fi
 log "train worker start tag=$TAG round=$ROUND gpus=$NGPU replay=$REPLAY budget=$TOKEN_BUDGET dry_run=$DRY"
 
 # previous policy (cumulative LoRA): resume from the previous adapter if any

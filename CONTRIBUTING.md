@@ -18,7 +18,7 @@ pipeline, dataset-recipe, API and template tests run everywhere.
 - **New tasks**: a task folder (seed program with `# EVOLVE-BLOCK-START/END`, `evaluator.py` returning `combined_score` and
   `validity`, `config.yaml` with the task text) plus a record in `config/dataset/MANIFEST_eft.json` and, if the sources are
   public, an entry in `config/dataset/sources.json`.  Run `python3 scripts/tools/build_task_text_registry.py` afterwards and
-  give the task an alias in `src/pipeline.py` (`TASK_IDS`, `DISPLAY`).
+  give the task an alias in `src/inner/tasks/aliases.py` (`TASK_IDS`, `DISPLAY`).
 - **Harness components** under `src/inner/harness` (skills, tools, middleware) and proposer-side improvements under
   `src/outer` (gates, rewards, ratchet).
 - **Portability fixes** for other Slurm sites (everything site-specific belongs in `config/local.env`).

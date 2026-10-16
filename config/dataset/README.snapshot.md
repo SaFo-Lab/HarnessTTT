@@ -16,7 +16,7 @@ moving checkout at runtime.
 | `runtime/skydiscover_min/`, `runtime/simpletes_min/` | import shims the frozen evaluators need (`EvaluationResult`; `simpletes.construction`, `simpletes.utils.text`) | overlay / SimpleTES |
 | `runtime/ahc_native/bin/` | narrow `docker`, `time`, `sync`, `prlimit`, `g++-12` compatibility commands so the unmodified SimpleTES AHC runner executes inside a Slurm container without a Docker daemon (`PROVENANCE.md`) | overlay |
 
-Scores: every evaluator returns `combined_score` (higher is better) and `validity`; `src/pipeline.py` `DISPLAY` maps the
+Scores: every evaluator returns `combined_score` (higher is better) and `validity`; `src/inner/tasks/aliases.py` `DISPLAY` maps the
 score to the metric the paper reports (sum of radii, determinant ratio, microseconds, ...).
 
 Paths in the manifest may contain `${VARIABLES}` (`SAH_KERNEL_EVAL_PYTHON`, `SAH_NEWTASK_OVERLAY`, see

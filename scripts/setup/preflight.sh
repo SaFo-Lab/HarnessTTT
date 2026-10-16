@@ -53,9 +53,9 @@ req_entry "${SAH_PYTHON:-<unset>}" "SAH runtime Python (SAH_PYTHON)"
 [ "$TRAIN" = 1 ] && { req_entry "${TRAIN_ENV:-<unset>}/bin/ray" "training env ray (TRAIN_ENV)"; }
 # --- Slurm settings ---
 for v in HTT_SLURM_ACCOUNT HTT_SLURM_PARTITION HTT_SLURM_QOS; do
-  val="${!v:-}"; case "$val" in ""|*"<"*) bad "$v is unset or still a placeholder (config/local.env)";; *) ok "$v=$val";; esac; done
+  val="${!v:-}"; case "$val" in *"<"*) bad "$v is still a placeholder: $val (config/local.env; leave it empty for the cluster default)";; "") ok "$v empty: cluster default";; *) ok "$v=$val";; esac; done
 if [ "${HARNESSTTT_REQUIRE_LOW_QOS:-0}" = 1 ]; then [[ "$HTT_SLURM_QOS" == *_low ]] && ok "low QOS: $HTT_SLURM_QOS" || bad "HARNESSTTT_REQUIRE_LOW_QOS=1 but HTT_SLURM_QOS=$HTT_SLURM_QOS is not a *_low QOS"; fi
-grep -q -- '--qos=@@QOS@@' "$HARNESSTTT_ROOT/scripts/pipeline/templates/round.sbatch" "$HARNESSTTT_ROOT/scripts/pipeline/templates/train.sbatch" && ok "templates take QOS from env" || bad "templates hard-code a QOS"
+grep -q -- '@@SBATCH_QOS@@' "$HARNESSTTT_ROOT/scripts/pipeline/templates/round.sbatch" "$HARNESSTTT_ROOT/scripts/pipeline/templates/train.sbatch" && ok "templates take account/partition/QOS from env" || bad "templates hard-code a QOS"
 # --- Python import probe ---
 PROBE="${HARNESSTTT_HOST_PYTHON:-}"; [ -n "$PROBE" ] || { [ -n "${SAH_PYTHON:-}" ] && [ -x "$SAH_PYTHON" ] && PROBE="$SAH_PYTHON"; } || true
 if [ -n "$PROBE" ] && [ -d "$NEXAU_ROOT" ]; then

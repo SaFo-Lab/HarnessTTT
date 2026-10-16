@@ -111,7 +111,7 @@ CUDA_VISIBLE_DEVICES="$(seq -s, 0 $((TP - 1)))" setsid env -u VLLM_ENV "$VLLM_EN
   --host 127.0.0.1 --port "$PORT" --served-model-name "$SERVED_MODEL" \
   --max-model-len "$MAX_MODEL_LEN" --max-num-seqs 4 --max-num-batched-tokens 8192 \
   --gpu-memory-utilization 0.85 "${VLLM_EXTRA[@]}" --language-model-only \
-  --enable-auto-tool-choice --tool-call-parser qwen3_xml >> "$B/vllm.log" 2>&1 &
+  --enable-auto-tool-choice --tool-call-parser "${SAH_VLLM_TOOL_PARSER:-qwen3_xml}" >> "$B/vllm.log" 2>&1 &
 VPID=$!
 cleanup(){ kill -TERM -- "-$VPID" 2>/dev/null || kill -TERM "$VPID" 2>/dev/null || true; }
 trap cleanup EXIT TERM INT

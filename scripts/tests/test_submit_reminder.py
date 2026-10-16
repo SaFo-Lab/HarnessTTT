@@ -4,7 +4,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from outer.harness.middlewares.submit_reminder import SubmitReminderMiddleware
+try:
+    from outer.harness.middlewares.submit_reminder import SubmitReminderMiddleware
+except Exception as _exc:  # NexAU needs Python 3.12 (pydantic, PEP 604 syntax): skip without the runtime
+    import unittest as _unittest
+    raise _unittest.SkipTest(f"needs the NexAU runtime: {_exc}")
 
 
 class SubmitReminderToolGateTest(unittest.TestCase):

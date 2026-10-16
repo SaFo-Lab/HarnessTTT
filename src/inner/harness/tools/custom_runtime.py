@@ -30,7 +30,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable, Dict
 
-from inner.harness.tools.code_policy import FORBIDDEN_ATTRIBUTES, FORBIDDEN_MODULES, IMPORT_WHITELIST
+from inner.harness.tools.code_policy import FORBIDDEN_ATTRIBUTES, FORBIDDEN_MODULES, IMPORT_WHITELIST, string_literal_violations
 from inner.harness.tools.runtime import get_session
 from inner.runtime.harness_sdk import ToolContext
 
@@ -95,12 +95,27 @@ def exec_generated(source: bytes, filename: str) -> Dict[str, Any]:
     return ns
 
 
+def gate_source(source: bytes, filename: str) -> None:
+    """Re-run the proposer-side static gate before executing a generated tool: a package may have been edited after it
+    was validated, or come from outside the pipeline.  Raises ValueError with the gate's errors."""
+    try:
+        from outer.safety.static_gates import check_tool_code
+    except Exception:   # executor installed without the proposer side: fall back to the shared policy's string rule
+        import ast
+        errors = string_literal_violations(ast.parse(source.decode("utf-8", errors="replace")))
+    else:
+        _ok, errors = check_tool_code(source.decode("utf-8", errors="replace"))
+    if errors:
+        raise ValueError(f"custom tool {filename} rejected by the static gate: {'; '.join(errors)[:600]}")
+
+
 def _load_run(py_path: Path) -> Callable:
     source = py_path.read_bytes()
     key = f"{py_path}:{hashlib.sha256(source).hexdigest()}"
     fn = _CACHE.get(key)
     if fn is not None:
         return fn
+    gate_source(source, str(py_path))
     ns = exec_generated(source, str(py_path))
     fn = ns.get("run")
     if not callable(fn):

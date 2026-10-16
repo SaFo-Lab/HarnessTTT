@@ -55,7 +55,10 @@ class H2WorkspaceTest(unittest.TestCase):
             # Exercise the exact NexAU adapter that feeds OpenAI's create()
             # call.  A nested YAML key would survive here as the unsupported
             # literal parameter named ``extra_params``.
-            from nexau.archs.llm.llm_config import LLMConfig
+            try:
+                from nexau.archs.llm.llm_config import LLMConfig
+            except Exception as exc:  # NexAU needs Python 3.12: the adapter check is skipped without the runtime
+                self.skipTest(f"needs the NexAU runtime: {exc}")
 
             openai_params = LLMConfig(**llm).to_openai_params()
             self.assertEqual(openai_params["extra_body"], {"top_k": 20})

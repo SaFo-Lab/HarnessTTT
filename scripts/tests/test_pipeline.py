@@ -460,11 +460,12 @@ class SlurmPortabilityTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="htt_port_"))
         os.environ["FAKE_SLURM_DIR"] = str(self.tmp / "slurm")
         os.environ["FAKE_STEP_SECONDS"] = "0.05"
-        for key in ("FAKE_FAIL_ROUNDS", "FAKE_ZERO_ADV_ROUNDS", "FAKE_FAIL_TRAIN", "FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL"):
+        for key in ("FAKE_FAIL_ROUNDS", "FAKE_ZERO_ADV_ROUNDS", "FAKE_FAIL_TRAIN", "FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL",
+                    "FAKE_PROLOGUE_FAIL_ROUNDS", "FAKE_TIMEOUT_ROUNDS"):
             os.environ.pop(key, None)
 
     def tearDown(self):
-        for key in ("FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL"):
+        for key in ("FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL", "FAKE_PROLOGUE_FAIL_ROUNDS", "FAKE_TIMEOUT_ROUNDS"):
             os.environ.pop(key, None)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -477,7 +478,8 @@ class SlurmPortabilityTest(unittest.TestCase):
 
     def test_gres_fields_of_every_shape_are_counted(self):
         for field, want in (("gres/gpu:2", 2), ("gres/gpu:h100:8", 8), ("gres/gpu:a100_80gb:4", 4), ("gpu:4(IDX:0-3)", 4),
-                            ("gres/gpu:8,gres/nvme:1", 8), ("N/A", 0), ("", 0), ("gres/nvme:1", 0)):
+                            ("gres/gpu:8,gres/nvme:1", 8), ("N/A", 0), ("", 0), ("gres/nvme:1", 0), ("gres:gpu:2", 2),
+                            ("gres/gpu:3g.20gb:2", 2), ("gpu:h100:2(IDX:0-1)", 2)):
             self.assertEqual(pipeline.gpus_in_gres(field), want, field)
 
     def test_zero_caps_are_values_not_defaults(self):
@@ -530,6 +532,34 @@ class SlurmPortabilityTest(unittest.TestCase):
         self.assertIn("#SBATCH --mem=120G", text)
         self.assertIn("#SBATCH --gres=gpu:4", text)
         self.assertEqual((runner.run / "GPU_LAYOUT").read_text().strip(), "4 eval_gpus=1")
+        runner.release()
+
+    def test_prologue_failure_stops_the_runner_with_the_message(self):
+        os.environ["FAKE_PROLOGUE_FAIL_ROUNDS"] = "1"
+        runner = pipeline.Runner(self.cfg(), quiet=True)
+        with self.assertRaises(SystemExit) as ctx:
+            runner.run_loop()
+        self.assertIn("failed before srun", str(ctx.exception))
+        self.assertIn("container image SAH_IMAGE", str(ctx.exception))
+        self.assertEqual(json.loads((runner.run / "RETRIES.json").read_text()).get("round1"), 1, "not retried")
+
+    def test_timeout_is_not_resubmitted_unchanged(self):
+        os.environ["FAKE_TIMEOUT_ROUNDS"] = "1"
+        runner = pipeline.Runner(self.cfg(), quiet=True)
+        with self.assertRaises(SystemExit) as ctx:
+            runner.run_loop()
+        self.assertIn("TIMEOUT", str(ctx.exception))
+        self.assertIn("round_time", str(ctx.exception))
+
+    def test_worker_budgets_follow_round_time(self):
+        self.assertEqual(pipeline.wall_seconds("06:00:00"), 21600)
+        self.assertEqual(pipeline.wall_seconds("1-02:00:00"), 93600)
+        self.assertEqual(pipeline.wall_seconds("90"), 5400)
+        runner = pipeline.Runner(self.cfg(round_time="02:00:00"), quiet=True)
+        script = Path(runner.dry_run()).read_text()
+        self.assertIn("SAH9B_PROPOSE_TIMEOUT=2880", script)       # 40 % of 2 h
+        self.assertIn("SAH9B_ROLLOUT_WALL_TIMEOUT=3240", script)  # 45 %
+        self.assertIn("SAH9B_JOB_SECONDS=6300", script)           # 2 h - 15 min
         runner.release()
 
     def test_training_skipped_by_the_runner_leaves_the_same_marker_as_the_worker(self):

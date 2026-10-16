@@ -1,5 +1,7 @@
 #!/bin/bash
-# HarnessTTT job-side driver of the online-training loop (one lineage/arm = one run dir):
+# HarnessTTT job-side driver of the online-training loop (one lineage/arm = one run dir).  LEGACY: the supported driver is
+# src/pipeline.py (a login-node process that submits and watches the same jobs); chain.sh is kept for sites that prefer
+# sbatch epilogue chaining and is not exercised by the runner's tests.
 #   chain.sh <run_dir> after_round <N> : round N collected -> beam bases + training replay -> submit TRAIN job (8 GPUs)
 #   chain.sh <run_dir> after_train <N> : model_state for round N published -> submit ROUND job N+1 (proposer = merged checkpoint)
 #   chain.sh <run_dir> start 1         : submit ROUND job 1 with the frozen proposer (initial H2 package, initial programs)
@@ -36,6 +38,8 @@ fill(){ sed -e "s|@@RUN@@|$run|g" -e "s|@@SAH_ROOT@@|$SAH_ROOT|g" -e "s|@@PIPELI
   -e "s|@@ACCOUNT@@|${HTT_SLURM_ACCOUNT:-}|g" -e "s|@@PARTITION@@|${HTT_SLURM_PARTITION:-}|g" -e "s|@@QOS@@|${HTT_SLURM_QOS:-}|g" -e "s|@@CONTAINER_MOUNTS@@|${CONTAINER_MOUNTS:?}|g" \
   -e "s|@@SBATCH_ACCOUNT@@|${HTT_SLURM_ACCOUNT:+#SBATCH --account=$HTT_SLURM_ACCOUNT}|g" -e "s|@@SBATCH_PARTITION@@|${HTT_SLURM_PARTITION:+#SBATCH --partition=$HTT_SLURM_PARTITION}|g" \
   -e "s|@@SBATCH_QOS@@|${HTT_SLURM_QOS:+#SBATCH --qos=$HTT_SLURM_QOS}|g" -e "s|@@RUN_ROOT@@|$R|g" \
+  -e "s|@@PROPOSE_TIMEOUT@@|${SAH9B_PROPOSE_TIMEOUT:-8640}|g" -e "s|@@ROLLOUT_TIMEOUT@@|${SAH9B_ROLLOUT_WALL_TIMEOUT:-9720}|g" \
+  -e "s|@@JOB_SECONDS@@|${SAH9B_JOB_SECONDS:-20700}|g" -e "s|@@MIN_ROUND_SECONDS@@|${SAH9B_MIN_ROUND_SECONDS:-7200}|g" \
   -e "s|@@OVERCAP@@|${SAH9B_OVER_CAP_AS_INVALID:-1}|g" -e "s|@@MAX_EVALS@@|${SAH9B_MAX_EVALS:-20}|g" -e "s|@@EVAL_TIMEOUT@@|${SAH9B_EVAL_TIMEOUT:-600}|g" \
   -e "s|@@TRAIN_GPUS@@|${SAH9B_TRAIN_GPUS:-8}|g" -e "s|@@TRAIN_CPUS@@|${SAH9B_TRAIN_CPUS:-32}|g" -e "s|@@TRAIN_MEM@@|${SAH9B_TRAIN_MEM:-0}|g" \
   -e "s|@@BASELINE_JSON@@|${SAH9B_BASELINE_JSON:-}|g" -e "s|@@EVAL_GPUS@@|${SAH9B_EVAL_GPUS:-0}|g" \
@@ -54,12 +58,12 @@ if [ "$phase" = after_round ]; then
   prev=""; [ "$N" -gt 1 ] && prev=$(printf '%s/training/round%03d/model_state.json' "$run" "$((N-1))")
   if [ "$rows" -lt 4 ]; then
     log "only $rows trainable rows in round $N: skipping training, proposer unchanged"
-    "$HOST_PY" - "$T/model_state.json" "$prev" "$N" "$tag" "${SAH_MODEL_PATH:-}" <<'PY'
+    "$HOST_PY" - "$T/model_state.json" "$prev" "$N" "$tag" "${SAH_MODEL_PATH:-}" "$rows" <<'PY'
 import json, sys, time
-out, prev, n, tag, base = sys.argv[1:]
+out, prev, n, tag, base, rows = sys.argv[1:]
 p = json.load(open(prev)) if prev else {"model_path": base, "adapter_path": None}
 json.dump({"schema": 2, "tag": tag, "round": int(n), "model_path": p["model_path"], "adapter_path": p.get("adapter_path"), "weights_updated": False,
-           "skip_reason": "insufficient_rows", "published_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, open(out, "w"), indent=2)
+           "skip_reason": f"insufficient_rows_{rows}", "published_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, open(out, "w"), indent=2)
 PY
     exec bash "$L/chain.sh" "$run" after_train "$N"
   fi

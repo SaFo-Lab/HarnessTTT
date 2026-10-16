@@ -24,7 +24,7 @@ from typing import List, Tuple
 # the policy is shared with the executor runtime, which executes generated tools in a namespace restricted to it
 # (inner.harness.tools.custom_runtime): what the gate forbids statically is also unavailable at run time
 from inner.harness.tools.code_policy import (  # noqa: E402
-    FORBIDDEN_ATTRIBUTES, FORBIDDEN_MODULES, FORBIDDEN_NAMES, IMPORT_WHITELIST, MAX_CODE_CHARS,
+    FORBIDDEN_ATTRIBUTES, FORBIDDEN_MODULES, FORBIDDEN_NAMES, IMPORT_WHITELIST, MAX_CODE_CHARS, string_literal_violations,
 )
 
 MIDDLEWARE_LAST_STEP_KINDS = {
@@ -175,6 +175,7 @@ def check_tool_code(code: str) -> Tuple[bool, List[str]]:
         errors.append("must define exactly one top-level `def run(ctx, args):`")
     elif [a.arg for a in run_defs[0].args.args][:2] != ["ctx", "args"]:
         errors.append("run() signature must be (ctx, args)")
+    errors.extend(string_literal_violations(tree))
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -566,6 +567,7 @@ def check_middleware_code(code: str, hook: str) -> Tuple[bool, List[str]]:
     state_aliases = set()
     if "--USER-HOOK-START--" in code or "--USER-HOOK-END--" in code:
         errors.append("the wrapper sentinels '# --USER-HOOK-START--' / '# --USER-HOOK-END--' may not appear in a hook")
+    errors.extend(string_literal_violations(tree))
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             value = node.value

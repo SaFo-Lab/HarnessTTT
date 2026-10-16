@@ -58,13 +58,40 @@ def gpus_in_gres(field: str) -> int:
     """GPUs in one squeue ``%b`` field: ``gres/gpu:2``, ``gres/gpu:h100:8``, ``gpu:4(IDX:0-3)``, ``gres/gpu:8,gres/nvme:1``; ``N/A`` -> 0."""
     total = 0
     for item in field.split(","):
-        m = re.search(r"(?:^|/)gpu(?::[A-Za-z][\w.-]*)?:(\d+)(?:\(|\s*$)", item.strip())
+        m = re.search(r"(?:^|[/:])gpu(?::[^:,()\s]+)?:(\d+)(?:\(|\s*$)", item.strip())
         if m:
             total += int(m.group(1))
     return total
 
 
 _UNKNOWN_WAIT_SECONDS = 900.0   # a job gone from squeue without an accounting record and without artefacts: how long to keep waiting
+RESOURCE_STATES = {"TIMEOUT", "OUT_OF_MEMORY", "DEADLINE"}   # resubmitting the same script would only burn the same GPU hours again
+# `sbatch --test-only` answers that describe the cluster's current state, not the script (the real submission would just wait)
+_TEST_ONLY_TRANSIENT_RE = re.compile(r"Required node not available|down, drained or reserved|violates accounting/QOS policy|"
+                                     r"MaxSubmitJobs|AssocMaxJobs|QOSMax|ReqNodeNotAvail|Nodes required for job are DOWN", re.I)
+
+
+def wall_seconds(limit: str) -> int:
+    """Slurm time limit ('[D-]HH:MM:SS', 'HH:MM', 'MM') in seconds."""
+    text = str(limit).strip()
+    days, _, hms = text.rpartition("-")
+    parts = [int(x) for x in hms.split(":")]
+    if len(parts) == 3:
+        secs = parts[0] * 3600 + parts[1] * 60 + parts[2]
+    elif len(parts) == 2:
+        secs = parts[0] * 3600 + parts[1] * 60 if days else parts[0] * 60 + parts[1]
+    else:
+        secs = parts[0] * 60
+    return secs + (int(days) * 86400 if days else 0)
+
+
+def err_tail(path: Path) -> Tuple[str, Optional[str]]:
+    """Last lines of a job's stderr file and, if present, the job script's own '[sbatch] ...' prologue message."""
+    if not path.is_file():
+        return "", None
+    lines = [l.strip() for l in path.read_text(errors="replace").splitlines() if l.strip()]
+    marker = next((l for l in reversed(lines) if l.startswith("[sbatch] ")), None)
+    return " / ".join(lines[-3:])[:300], marker
 
 
 class SlurmUnavailable(RuntimeError):
@@ -480,6 +507,23 @@ class Runner:
     _NODE_FAILURE_RE = re.compile(r"pyxis: container start failed|No space left on device|couldn't start container|"
                                   r"Failed to invoke spank plugin stack|task_init\(\) failed", re.I)
 
+    def fatal_job_outcome(self, kind: str, n: int, jid: str, final: str, err_path: Path) -> None:
+        """Stop the runner (SystemExit) when resubmitting the same script could not help: the job script failed before
+        srun ('[sbatch] ...' prologue message), or Slurm ended the job for its wall time / memory (B-3)."""
+        _tail, marker = err_tail(err_path)
+        label = f"{kind} {n}" if kind != "baseline" else "baseline"
+        if marker:
+            self.set_phase(f"{label}: configuration error", f"job {jid}")
+            raise SystemExit(f"{label}: job {jid} failed before srun: {marker} (see {err_path}); configuration error, not retried -- "
+                             f"fix config/local.env or the tree and re-run (the runner resumes)")
+        state = final.split()[0].split("+")[0] if final else ""
+        if state in RESOURCE_STATES:
+            knobs = {"round": "round_time / round_mem (or lower k, max_evals)", "train": "train_time / train_mem (or lower token_budget, k)",
+                     "baseline": "baseline_time / round_mem"}[kind]
+            self.set_phase(f"{label}: {state.lower()}", f"job {jid}")
+            raise SystemExit(f"{label}: job {jid} ended with {state}; resubmitting the same script would spend the same GPU hours "
+                             f"again -- raise {knobs} in the pipeline config and re-run (the runner resumes)")
+
     def node_failure(self, jid: str) -> Optional[str]:
         """A job that died at container start (full node-local disk, enroot/pyxis error) is a node problem, not a round
         problem: record the node in <run>/BAD_NODES so later submissions exclude it and let the caller refund the retry."""
@@ -504,6 +548,8 @@ class Runner:
             out = subprocess.run(argv, capture_output=True, text=True, timeout=_SLURM_CALL_TIMEOUT)
         except subprocess.TimeoutExpired:
             raise SlurmUnavailable(f"{cmd[0]} gave no answer within {_SLURM_CALL_TIMEOUT:.0f}s")
+        except OSError as e:
+            raise SystemExit(f"Slurm client {argv[0]} cannot be run ({e}); is Slurm installed on this host (or slurm_bin set correctly)?") from None
         if _SLURM_DOWN_RE.search(out.stderr) and (out.returncode != 0 or not out.stdout.strip()):
             raise SlurmUnavailable(f"{cmd[0]}: {out.stderr.strip().splitlines()[-1][:200]}")
         return out
@@ -685,7 +731,16 @@ class Runner:
             "BASELINE_JSON": self.baseline_json or "", "EVAL_GPUS": self.cfg.eval_gpus,
             "MODEL_PATH": e["SAH_MODEL_PATH"], "SERVED_MODEL": e["SAH_SERVED_MODEL"], "VLLM_TP": self.cfg.vllm_tp,
             "MAX_MODEL_LEN": self.cfg.max_model_len,
+            **self.round_timeouts(),
         }
+
+    def round_timeouts(self) -> Dict[str, int]:
+        """Worker-side wall budgets of a round job derived from round_time: proposing 40 %, rollouts 45 %, the job's own
+        budget the limit minus a 15-minute margin (the template used to hard-code 3 h + 3 h, more than a 6 h job)."""
+        secs = wall_seconds(self.cfg.round_time)
+        job = max(600, secs - 900)
+        return {"PROPOSE_TIMEOUT": max(300, int(secs * 0.40)), "ROLLOUT_TIMEOUT": max(300, int(secs * 0.45)),
+                "JOB_SECONDS": job, "MIN_ROUND_SECONDS": min(7200, job // 2)}
 
     def fill(self, template: str, mapping: Dict[str, Any]) -> str:
         text = (self.sah_root / "scripts" / "pipeline" / "templates" / template).read_text()
@@ -718,11 +773,14 @@ class Runner:
         return out
 
     def preflight_submission(self) -> None:
-        """``sbatch --test-only`` on the round-1 script (and the training script when the loop trains): an unsatisfiable
-        layout, account, partition or QOS is reported now, not after round 1 ran for an hour (NODECAP-001)."""
+        """``sbatch --test-only`` on the round-1 script, the training script (when the loop trains) and the baseline script
+        (when a seed swap needs one): an unsatisfiable layout, account, partition or QOS is reported now, not after round 1
+        ran for an hour (NODECAP-001).  Answers about the cluster's current state (nodes down, limits reached) only warn."""
         probes = [("round", self.round_script_text(1, self.env["SAH_MODEL_PATH"], None, None))]
         if self.cfg.max_round > 1:
             probes.append(("train", self.train_script_text(1, self.td(1) / "replay.jsonl", None)))
+        if self.baseline_json and not self.baseline_ready():
+            probes.append(("baseline", self.baseline_script_text()))
         for kind, text in probes:
             path = self.run / "gen" / f"_preflight_{kind}.sbatch"
             path.write_text(text)
@@ -736,19 +794,25 @@ class Runner:
                     path.unlink()
             if out.returncode != 0:
                 text_out = (out.stderr.strip() or out.stdout.strip() or "sbatch --test-only failed").splitlines()[-1][:300]
+                if _TEST_ONLY_TRANSIENT_RE.search(text_out):
+                    self.log(f"preflight: the {kind} job cannot start right now ({text_out}); the submission will wait for the cluster")
+                    continue
                 raise SystemExit(f"Slurm rejects the {kind} job as configured: {text_out}\n  adjust round_gpus/train_gpus, round_cpus/round_mem, "
                                  f"train_cpus/train_mem (pipeline config) or HTT_SLURM_ACCOUNT/PARTITION/QOS (config/local.env)")
-        self.log("preflight: sbatch --test-only accepts the round" + (" and training" if len(probes) > 1 else "") + " job script")
+        self.log("preflight: sbatch --test-only accepts the " + ", ".join(k for k, _ in probes) + " job script(s)")
 
     # ---- baseline job (seed-program swap) ---------------------------------------------------------------------------------
-    def baseline_script(self) -> Path:
+    def baseline_script_text(self) -> str:
         g = self.cfg.vllm_tp + self.cfg.eval_gpus
         cpus, mem = self.job_resources(g)
         mapping = dict(self.common_mapping(), JOBNAME=f"{self.cfg.job_prefix}-{self.cfg.name}-baseline", GPUS=g, CPUS=cpus,
                        MEM=mem, TIME=self.cfg.baseline_time, SEED_PROGRAMS=self.seed_file or "", BASELINE_OUT=self.baseline_json,
                        BASELINE_SEEDS=self.cfg.baseline_seeds)
+        return self.fill("baseline.sbatch", mapping)
+
+    def baseline_script(self) -> Path:
         out = self.run / "gen" / f"{self.cfg.name}_baseline.sbatch"
-        out.write_text(self.fill("baseline.sbatch", mapping))
+        out.write_text(self.baseline_script_text())
         return out
 
     def baseline_progress(self) -> Tuple[str, str]:
@@ -804,6 +868,7 @@ class Runner:
                 raise SystemExit(f"baseline: job {jid} died with a Python traceback (see {out}); fix and re-run")
             if final.startswith("CANCELLED"):
                 raise SystemExit(f"baseline: job {jid} was cancelled; re-run to continue")
+            self.fatal_job_outcome("baseline", 0, jid, final, self.run / "out" / f"slurm-{jid}.err")
             self.log(f"baseline: job {jid} ended ({final}) without writing {self.baseline_json}; retrying")
 
     # ---- progress ------------------------------------------------------------------------------------------------------
@@ -1066,7 +1131,7 @@ class Runner:
                 self.archive_round(n, "previous attempt did not collect")
             attempt = self.retries(f"round{n}")
             if attempt > self.cfg.max_round_retries:
-                raise SystemExit(f"round {n} failed {attempt} times; see {self.run / 'out'} and INFRA_FAILURES.log")
+                raise SystemExit(f"round {n} failed {attempt} times; see {self.run / 'out'} (job logs) and {self.run / 'RETRIES.json'}")
             self.wait_for_capacity(self.cfg.round_gpus, f"round {n}")
             script = self.round_script(n, proposer, bases, seed_programs)
             t0 = time.time()
@@ -1075,6 +1140,16 @@ class Runner:
             self.log(f"round {n}: submitted job {jid} ({self.cfg.round_gpus} GPUs, proposer = "
                      f"{'frozen base' if proposer == self.env.get('SAH_MODEL_PATH') else proposer}) -> {script}")
             final = self.wait_job(jid, "round", n)
+            if final == "UNKNOWN" and not self.collected(n):
+                # m-5: no accounting record and no artefacts yet -- the worker may still be running under the same name
+                # (squeue answered with an error, not with "gone"); re-attach instead of archiving a live round
+                name = re.search(r"^#SBATCH --job-name=(\S+)", script.read_text(), re.M)
+                twin = self.queued_job_named(name.group(1)) if name else None
+                if twin:
+                    self.log(f"round {n}: job {twin} named {name.group(1)} is still queued/running; re-attaching instead of resubmitting")
+                    (self.run / "JOB_ID").write_text(twin + "\n")
+                    final = self.wait_job(twin, "round", n)
+                    jid = twin
             if self.collected(n):
                 self.record_round_collected(n, jid, int(time.time() - t0))
                 return
@@ -1084,10 +1159,11 @@ class Runner:
                 text = out.read_text(errors="replace")
                 traceback = "Traceback (most recent call last)" in text
                 tail = " | last log: " + " / ".join(text.splitlines()[-2:])[:300]
-            infra = self.run / "INFRA_FAILURES.log"
-            if infra.is_file():
-                tail += " | infra: " + infra.read_text().splitlines()[-1][:200]
+            err_text, _marker = err_tail(self.run / "out" / f"slurm-{jid}.err")
+            if err_text:
+                tail += " | stderr: " + err_text
             self.log(f"round {n}: job {jid} ended ({final}) without collecting{tail}")
+            self.fatal_job_outcome("round", n, jid, final, self.run / "out" / f"slurm-{jid}.err")
             node = self.node_failure(jid)
             if node:
                 self.retries(f"round{n}", delta=-1)
@@ -1164,7 +1240,9 @@ class Runner:
                 self.record_train_complete(n, jid, int(time.time() - t0), st)
                 return
             failed = (td / "FAILED").read_text().strip() if (td / "FAILED").is_file() else final
-            self.log(f"train {n}: job {jid} ended without publishing model_state ({failed}); retrying")
+            err_text, _marker = err_tail(self.run / "out" / f"train-r{n:03d}-{jid}.err")
+            self.log(f"train {n}: job {jid} ended without publishing model_state ({failed}){' | stderr: ' + err_text if err_text else ''}; retrying")
+            self.fatal_job_outcome("train", n, jid, final, self.run / "out" / f"train-r{n:03d}-{jid}.err")
             node = self.node_failure(jid)
             if node:
                 self.retries(f"train{n}", delta=-1)

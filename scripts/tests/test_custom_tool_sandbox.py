@@ -17,6 +17,12 @@ ESCAPES = (
     "import scipy\ndef run(ctx, args):\n    return scipy.io.savemat('/tmp/x.mat', {'a': 1})",
     "import pandas as pd\ndef run(ctx, args):\n    return pd.DataFrame({'a': [1]}).to_string(buf='/tmp/x')",
     "import numpy as np\ndef run(ctx, args):\n    return np.savetxt('/tmp/x', [1])",
+    # string-driven attribute resolution (round-3 escape): the dotted names live inside string literals
+    "import string\ndef run(ctx, args):\n    return string.Formatter().get_field('0.__self__', [len], {})[0]",
+    "def run(ctx, args):\n    return '{0.__self__}'.format(len)",
+    "def run(ctx, args):\n    return '{0._secret}'.format(ctx)",
+    "def run(ctx, args):\n    return '{x[__class__]}'.format_map({'x': {}})",
+    "import pandas as pd\ndef run(ctx, args):\n    return pd.DataFrame({'a': [1]}).eval('a.__class__')",
 )
 
 
@@ -34,14 +40,33 @@ class StaticGateEscapeTest(unittest.TestCase):
         self.assertTrue(any("sentinel" in e for e in errors), errors)
 
 
-class RuntimeNamespaceTest(unittest.TestCase):
-    def run_tool(self, code: str, args=None):
+class RuntimeRegateTest(unittest.TestCase):
+    def test_a_tool_file_that_fails_the_gate_is_refused_at_load(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "custom_tools" / "t.py"
             path.parent.mkdir()
-            path.write_text(code)
+            path.write_text("def run(ctx, args):\n    return '{0.__self__}'.format(len)\n")
             custom_runtime._CACHE.clear()
-            return custom_runtime._load_run(path)(None, args or {})
+            with self.assertRaises(ValueError) as ctx:
+                custom_runtime._load_run(path)
+            self.assertIn("static gate", str(ctx.exception))
+
+    def test_f_strings_remain_available(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "custom_tools" / "t.py"
+            path.parent.mkdir()
+            path.write_text("import math\ndef run(ctx, args):\n    x = args.get('n', 2)\n    return f'pi*{x} = {math.pi * x:.3f}'\n")
+            custom_runtime._CACHE.clear()
+            self.assertEqual(custom_runtime._load_run(path)(None, {"n": 2}), "pi*2 = 6.283")
+
+
+class RuntimeNamespaceTest(unittest.TestCase):
+    """The restricted namespace on its own (exec_generated, without the load-time gate): defence in depth for code the
+    static gate would already refuse."""
+
+    def run_tool(self, code: str, args=None):
+        ns = custom_runtime.exec_generated(code.encode(), "<test-tool>")
+        return ns["run"](None, args or {})
 
     def test_legitimate_numerics_work(self):
         self.assertEqual(self.run_tool("import numpy as np\ndef run(ctx, args):\n    return float(np.linalg.norm([3.0, 4.0]))"), 5.0)

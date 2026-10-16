@@ -8,6 +8,10 @@ runner's progress reporting is exercised), from scripts/tests/fixtures/round_had
   FAKE_FAIL_ROUNDS    comma-separated rounds whose FIRST attempt ends without collecting (exercise archive + retry)
   FAKE_ZERO_ADV_ROUNDS rounds whose grpo_batch gets all-zero advantages (exercise the training-skip path)
   FAKE_FAIL_TRAIN     comma-separated rounds whose FIRST training attempt writes FAILED
+  FAKE_PROLOGUE_FAIL_ROUNDS  rounds whose job script fails before srun ("[sbatch] missing ..." on stderr)
+  FAKE_TIMEOUT_ROUNDS  rounds whose job ends in TIMEOUT without collecting
+  FAKE_NO_ACCOUNTING  sacct answers with nothing (a cluster without job accounting)
+  FAKE_TEST_ONLY_FAIL sbatch --test-only rejects the script
 """
 import json, os, random, re, shlex, shutil, subprocess, sys, time
 from pathlib import Path
@@ -47,7 +51,16 @@ def once(marker):
 def round_worker(env, jid):
     run = Path(env["SAH9B_RUN_DIR"]); n = int(env["SAH9B_ROUND"]); tid = env["SAH9B_TASKS"].strip('"')
     rd = run / "rounds" / f"round{n:03d}"
+    pro = {int(x) for x in os.environ.get("FAKE_PROLOGUE_FAIL_ROUNDS", "").split(",") if x.strip()}
+    if n in pro:   # the job script's own prologue fails before srun: message on stderr, exit 64, nothing else written
+        (run / "out").mkdir(parents=True, exist_ok=True)
+        (run / "out" / f"slurm-{jid}.err").write_text("[sbatch] missing: container image SAH_IMAGE (/no/such/image.sqsh)\n")
+        set_state(jid, "FAILED"); return
+    timeouts = {int(x) for x in os.environ.get("FAKE_TIMEOUT_ROUNDS", "").split(",") if x.strip()}
     set_state(jid, "RUNNING"); time.sleep(STEP)
+    if n in timeouts:   # Slurm killed the job at its wall limit before it collected
+        rd.mkdir(parents=True, exist_ok=True); (rd / "PORT_BASE").write_text("34099\n")
+        set_state(jid, "TIMEOUT"); return
     if (rd / "round.json").exists():   # the real worker refuses to overwrite an existing round (exit 42)
         set_state(jid, "FAILED"); return
     rd.mkdir(parents=True, exist_ok=True)
