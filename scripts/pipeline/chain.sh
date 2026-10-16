@@ -27,13 +27,15 @@ case "$task" in cp26) TID=eft__math__circle_packing;; hadamard) TID=eft__math__h
 case "$arm" in v3|v2|grpo|legacy|anchored) ADV=$arm;; *) log "unknown arm $arm"; exit 2;; esac
 case "$GPUS" in 1) CPUS=12; MEM=100G;; 2) CPUS=24; MEM=200G;; 4) CPUS=48; MEM=300G;; *) CPUS=$((GPUS*12)); MEM=$((GPUS*75))G;; esac
 mkdir -p "$run/out" "$run/gen" "$BRIEF_DIR"
-gpu_ok(){ local n g cap; n=$(squeue -u "$USER" -h | wc -l); g=$(squeue -u "$USER" -h -o "%b" | awk -F: '{s+=$NF} END{print s+0}'); cap=$(cat "$R/GPU_CAP" 2>/dev/null || echo "${HARNESSTTT_GPU_CAP:-48}")
+gpu_ok(){ local n g cap u; u="${USER:-$(id -un)}"; n=$(squeue -u "$u" -h | wc -l); g=$(squeue -u "$u" -h -o "%b" | awk -F: '{s+=$NF} END{print s+0}'); cap=$(cat "$R/GPU_CAP" 2>/dev/null || echo "${HARNESSTTT_GPU_CAP:-48}")
   [ -n "${SLURM_JOB_ID:-}" ] && n=$((n-1))   # this job is finishing
   if [ "$n" -ge "${HARNESSTTT_MAX_JOBS:-15}" ] || [ $((g + $1)) -gt "$cap" ]; then log "cap check failed: jobs=$n gpus=$g +$1 > cap $cap (resubmit by hand: bash $L/chain.sh $run $phase $N)"; return 1; fi; return 0; }
 fill(){ sed -e "s|@@RUN@@|$run|g" -e "s|@@SAH_ROOT@@|$SAH_ROOT|g" -e "s|@@PIPELINE_DIR@@|$L|g" -e "s|@@ENV_FILE@@|$ENV_FILE|g" -e "s|@@TASK_ID@@|$TID|g" -e "s|@@K@@|$K|g" -e "s|@@ADV@@|$ADV|g" \
   -e "s|@@H1_SEED@@|$H1_SEED|g" -e "s|@@MAX_ROUND@@|$MAXR|g" -e "s|@@BRIEF_DIR@@|$BRIEF_DIR|g" -e "s|@@GPUS@@|$GPUS|g" -e "s|@@CPUS@@|$CPUS|g" -e "s|@@MEM@@|$MEM|g" \
   -e "s|@@TOKEN_BUDGET@@|${SAH9B_TOKEN_BUDGET:-18000}|g" -e "s|@@LR@@|${SAH9B_TRAIN_LR:-1e-5}|g" -e "s|@@KL@@|${SAH9B_TRAIN_KL:-0.1}|g" \
-  -e "s|@@ACCOUNT@@|${HTT_SLURM_ACCOUNT:?}|g" -e "s|@@PARTITION@@|${HTT_SLURM_PARTITION:?}|g" -e "s|@@QOS@@|${HTT_SLURM_QOS:?}|g" -e "s|@@CONTAINER_MOUNTS@@|${CONTAINER_MOUNTS:?}|g" \
+  -e "s|@@ACCOUNT@@|${HTT_SLURM_ACCOUNT:-}|g" -e "s|@@PARTITION@@|${HTT_SLURM_PARTITION:-}|g" -e "s|@@QOS@@|${HTT_SLURM_QOS:-}|g" -e "s|@@CONTAINER_MOUNTS@@|${CONTAINER_MOUNTS:?}|g" \
+  -e "s|@@SBATCH_ACCOUNT@@|${HTT_SLURM_ACCOUNT:+#SBATCH --account=$HTT_SLURM_ACCOUNT}|g" -e "s|@@SBATCH_PARTITION@@|${HTT_SLURM_PARTITION:+#SBATCH --partition=$HTT_SLURM_PARTITION}|g" \
+  -e "s|@@SBATCH_QOS@@|${HTT_SLURM_QOS:+#SBATCH --qos=$HTT_SLURM_QOS}|g" -e "s|@@RUN_ROOT@@|$R|g" \
   -e "s|@@OVERCAP@@|${SAH9B_OVER_CAP_AS_INVALID:-1}|g" -e "s|@@MAX_EVALS@@|${SAH9B_MAX_EVALS:-20}|g" -e "s|@@EVAL_TIMEOUT@@|${SAH9B_EVAL_TIMEOUT:-600}|g" \
   -e "s|@@TRAIN_GPUS@@|${SAH9B_TRAIN_GPUS:-8}|g" -e "s|@@TRAIN_CPUS@@|${SAH9B_TRAIN_CPUS:-32}|g" -e "s|@@TRAIN_MEM@@|${SAH9B_TRAIN_MEM:-0}|g" \
   -e "s|@@BASELINE_JSON@@|${SAH9B_BASELINE_JSON:-}|g" -e "s|@@EVAL_GPUS@@|${SAH9B_EVAL_GPUS:-0}|g" \

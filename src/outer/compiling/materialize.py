@@ -256,7 +256,7 @@ def _build_skill_list(effective: Dict[str, Any], cand_dir: Path) -> list:
         desc = (sk.get("description", "") or f"Task-specific playbook: {name}").strip()
         (d / "SKILL.md").write_text(
             render_generated_skill(name, desc, sk["body"])
-        )
+        , encoding="utf-8")
         out.append(f"./skills/{name}")
     return out
 
@@ -272,7 +272,7 @@ def _build_custom_middlewares(effective: Dict[str, Any], cand_dir: Path) -> list
                                   hook=mw["hook"], name_repr=repr(name),
                                   hook_repr=repr(mw["hook"]))
         compile(code, str(cand_dir / "middlewares" / f"{name}.py"), "exec")
-        (cand_dir / "middlewares" / f"{name}.py").write_text(code)
+        (cand_dir / "middlewares" / f"{name}.py").write_text(code, encoding="utf-8")
         (cand_dir / "middlewares" / f"{name}.middleware.yaml").write_text(
             _yaml_str({
                 "name": name,
@@ -296,7 +296,7 @@ def _build_tool_list(effective: Dict[str, Any], cand_dir: Path) -> list:
     for t in effective.get("new_tools", []):
         name = t["name"]
         (cand_dir / "custom_tools").mkdir(exist_ok=True)
-        (cand_dir / "custom_tools" / f"{name}.py").write_text(t["implementation_py"])
+        (cand_dir / "custom_tools" / f"{name}.py").write_text(t["implementation_py"], encoding="utf-8")
         src = f"./custom_tools/{name}.py"
         input_schema = json.loads(json.dumps(
             t.get("input_schema") or {"type": "object", "properties": {}}
@@ -311,7 +311,7 @@ def _build_tool_list(effective: Dict[str, Any], cand_dir: Path) -> list:
             "type": "tool", "name": name,
             "description": t["description"],
             "input_schema": input_schema,
-        }))
+        }), encoding="utf-8")
         # Keep packages relocatable and prevent a stale absolute temp path from
         # selecting code outside the mounted H2 package at execution time.
         tools.append({"name": name, "yaml_path": f"./tools/{name}.tool.yaml",
@@ -368,13 +368,13 @@ def materialize(effective: Dict[str, Any], cand_dir: Path, *,
     # draft from a legacy parent; final candidates always use the strict path.
     (cand_dir / "prompt.md").write_text(
         effective["system_prompt"].rstrip() + "\n"
-    )
+    , encoding="utf-8")
 
     # --- skill --- #
     skill = "---\nname: discovery-optimization\ndescription: " + \
         json.dumps(effective.get("skill_description", "").strip()) + \
         "\n---\n\n" + effective.get("skill_body", "").rstrip() + "\n"
-    (cand_dir / "skills" / "discovery-optimization" / "SKILL.md").write_text(skill)
+    (cand_dir / "skills" / "discovery-optimization" / "SKILL.md").write_text(skill, encoding="utf-8")
 
     # --- tools (descriptions from spec; bindings = fixed executor contract) --- #
     tool_descs = effective.get("tool_descriptions", {})
@@ -384,21 +384,21 @@ def materialize(effective: Dict[str, Any], cand_dir: Path, *,
                               or schema.get("default_description")
                               or f"The {name} tool.",
                "input_schema": schema["input_schema"]}
-        (cand_dir / "tools" / f"{name}.tool.yaml").write_text(_yaml_str(doc))
+        (cand_dir / "tools" / f"{name}.tool.yaml").write_text(_yaml_str(doc), encoding="utf-8")
 
     # --- middleware code copy (imported per-process as middlewares.budget_reminder) --- #
-    (cand_dir / "middlewares" / "__init__.py").write_text("# candidate middleware package\n")
+    (cand_dir / "middlewares" / "__init__.py").write_text("# candidate middleware package\n", encoding="utf-8")
     src_mw = INNER_HARNESS / "middleware" / "budget_reminder.py"
-    mw_text = src_mw.read_text().replace(
+    mw_text = src_mw.read_text(encoding="utf-8").replace(
         "from inner.harness.tools.runtime import get_session",
         "from inner.harness.tools.runtime import get_session  # shared session bridge (fixed runtime)",
     )
-    (cand_dir / "middlewares" / "budget_reminder.py").write_text(mw_text)
-    sr_text = (INNER_HARNESS / "middleware" / "stall_restart.py").read_text().replace(
+    (cand_dir / "middlewares" / "budget_reminder.py").write_text(mw_text, encoding="utf-8")
+    sr_text = (INNER_HARNESS / "middleware" / "stall_restart.py").read_text(encoding="utf-8").replace(
         "from inner.harness.tools.runtime import get_session",
         "from inner.harness.tools.runtime import get_session  # shared session bridge (fixed runtime)",
     )
-    (cand_dir / "middlewares" / "stall_restart.py").write_text(sr_text)
+    (cand_dir / "middlewares" / "stall_restart.py").write_text(sr_text, encoding="utf-8")
 
     # --- agent.yaml --- #
     sampling = effective.get("sampling", {})
@@ -472,11 +472,11 @@ def materialize(effective: Dict[str, Any], cand_dir: Path, *,
             "generated component materialization mismatch: "
             f"expected={expected_inventory}, mounted={mounted_inventory}"
         )
-    (cand_dir / "agent.yaml").write_text(_yaml_str(agent))
+    (cand_dir / "agent.yaml").write_text(_yaml_str(agent), encoding="utf-8")
 
     # --- provenance --- #
     if raw_spec_text:
-        (cand_dir / "spec.yaml").write_text(raw_spec_text.rstrip() + "\n")
+        (cand_dir / "spec.yaml").write_text(raw_spec_text.rstrip() + "\n", encoding="utf-8")
     meta_payload = dict(meta or {})
     meta_payload["component_inventory"] = expected_inventory
     (cand_dir / "component_manifest.json").write_text(json.dumps({
@@ -484,6 +484,6 @@ def materialize(effective: Dict[str, Any], cand_dir: Path, *,
         "inventory": expected_inventory,
         "lineage": meta_payload.get("component_lineage", {}),
     }, indent=2))
-    (cand_dir / "meta.json").write_text(json.dumps(meta_payload, indent=2))
+    (cand_dir / "meta.json").write_text(json.dumps(meta_payload, indent=2), encoding="utf-8")
     # note: the candidate's spec sampling top_k is applied at runtime via extra_body
     return cand_dir

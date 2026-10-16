@@ -143,7 +143,7 @@ POOL_MODEL="$PROPOSER_MODEL"   # model served by the current replica pool (propo
 export TMPDIR="/tmp/harnessttt-$SLURM_JOB_ID"; mkdir -p "$TMPDIR"
 unset ANTHROPIC_API_KEY AZURE_API_KEY AZURE_OPENAI_API_KEY HF_TOKEN HUGGING_FACE_HUB_TOKEN GEMINI_API_KEY GOOGLE_API_KEY WANDB_API_KEY 2>/dev/null || true
 test -x "$SAH_PYTHON"; test -x "$VLLM_ENV/bin/vllm"; test -d "$SAH_MODEL_PATH"
-test "$(command -v docker)" = "$SAH_AHC_NATIVE_BIN/docker"
+case "$TASKS" in *ahc*) [ "$(command -v docker)" = "$SAH_AHC_NATIVE_BIN/docker" ] || { echo "AHC tasks need the docker shim first on PATH: $SAH_AHC_NATIVE_BIN/docker" >&2; exit 64; };; esac
 nvidia-smi -L | tee "$PHASE/nvidia-smi-L.txt"
 "$SAH_PYTHON" -c "from nexau import Agent; import numpy, scipy, yaml; print('runtime imports ok')"
 
@@ -168,7 +168,7 @@ start_replica(){ local g=$1 port=$((PORT_BASE + $1))
     --host 127.0.0.1 --port "$port" --served-model-name "$SERVED_MODEL" \
     --max-model-len "$MAX_MODEL_LEN" --max-num-seqs "$VLLM_MAX_SEQS" --max-num-batched-tokens 8192 \
     --gpu-memory-utilization 0.85 "${VLLM_EXTRA[@]}" --language-model-only \
-    --enable-auto-tool-choice --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice --tool-call-parser "${SAH_VLLM_TOOL_PARSER:-qwen3_xml}" \
     >> "$VLOG/replica-$g.log" 2>&1 &
   VPIDS[$g]=$!; }
 wait_replica_ready(){ local g=$1 port=$((PORT_BASE + $1)) ok=0 _i rc foreign=0
@@ -226,7 +226,7 @@ for g in $(seq 0 $((N_REPLICAS - 1))); do
     --host 127.0.0.1 --port "$port" --served-model-name "$SERVED_MODEL" \
     --max-model-len "$MAX_MODEL_LEN" --max-num-seqs "$VLLM_MAX_SEQS" --max-num-batched-tokens 8192 \
     --gpu-memory-utilization 0.85 "${VLLM_EXTRA[@]}" --language-model-only \
-    --enable-auto-tool-choice --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice --tool-call-parser "${SAH_VLLM_TOOL_PARSER:-qwen3_xml}" \
     > "$VLOG/replica-$g.log" 2>&1 &
   VPIDS+=("$!")
 done
@@ -332,7 +332,7 @@ for r in rows:
 for t, rs in sorted(by.items()):
     rw = [r.get("reward") for r in rs]; print(f"{t:36s} slots={len(rs)} rewards={rw}")
 PY
-date -Is > "$RUN_DIR/ROUND1_DONE"
+[ "$ROUND" = 1 ] && date -Is > "$RUN_DIR/ROUND1_DONE" || true
 beat "done: $ROUND_DIR"
 # --- v8 transition: next round inside this job, or leave it to the sbatch self-chain ---
 ROUNDS_DONE=$((ROUNDS_DONE + 1))

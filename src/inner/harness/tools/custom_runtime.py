@@ -21,16 +21,78 @@ trapped — a crashing custom tool must never kill the rollout.
 """
 from __future__ import annotations
 
+import builtins as _builtins
+import importlib
 import json
 import hashlib
 import traceback
+import types
 from pathlib import Path
 from typing import Any, Callable, Dict
 
+from inner.harness.tools.code_policy import FORBIDDEN_ATTRIBUTES, FORBIDDEN_MODULES, IMPORT_WHITELIST
 from inner.harness.tools.runtime import get_session
 from inner.runtime.harness_sdk import ToolContext
 
 _CACHE: Dict[str, Callable] = {}
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# restricted execution namespace: the static gate (outer.safety.static_gates) is a denylist over the AST and cannot see
+# types, so a tool that passed it may still reach `dataclasses.sys` or `json.codecs`; here those chains do not resolve
+# ----------------------------------------------------------------------------------------------------------------------
+class GuardedModule:
+    """A whitelisted module as generated code sees it: no private attributes, no I/O-capable names, and any module
+    reached through an attribute must itself be whitelisted (``numpy.linalg`` yes, ``dataclasses.sys`` no)."""
+    __slots__ = ("_mod",)
+
+    def __init__(self, mod: types.ModuleType):
+        object.__setattr__(self, "_mod", mod)
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_") or name in FORBIDDEN_ATTRIBUTES:
+            raise AttributeError(f"attribute {name!r} is not available to generated tools")
+        value = getattr(object.__getattribute__(self, "_mod"), name)
+        if isinstance(value, types.ModuleType):
+            root = (value.__name__ or "").split(".")[0]
+            if root in FORBIDDEN_MODULES or root not in IMPORT_WHITELIST:
+                raise AttributeError(f"module {value.__name__!r} is not available to generated tools")
+            return GuardedModule(value)
+        return value
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("generated tools cannot modify modules")
+
+    def __repr__(self) -> str:
+        return f"<guarded module {object.__getattribute__(self, '_mod').__name__}>"
+
+
+def _guarded_import(name: str, globals=None, locals=None, fromlist=(), level=0):
+    root = name.split(".")[0]
+    if level != 0 or root in FORBIDDEN_MODULES or root not in IMPORT_WHITELIST:
+        raise ImportError(f"import of {name!r} is not allowed in generated tools")
+    leaf = importlib.import_module(name)
+    return GuardedModule(leaf if fromlist else importlib.import_module(root))
+
+
+_SAFE_BUILTIN_NAMES = (
+    "abs", "all", "any", "bool", "bytes", "bytearray", "callable", "chr", "complex", "dict", "divmod", "enumerate", "filter",
+    "float", "format", "frozenset", "hasattr", "hash", "hex", "int", "isinstance", "issubclass", "iter", "len", "list", "map",
+    "max", "min", "next", "oct", "ord", "pow", "print", "range", "repr", "reversed", "round", "set", "slice", "sorted", "str",
+    "sum", "tuple", "zip", "classmethod", "staticmethod", "property", "object", "__build_class__",
+    "BaseException", "Exception", "ArithmeticError", "AssertionError", "AttributeError", "FloatingPointError", "ImportError",
+    "IndexError", "KeyError", "LookupError", "NameError", "NotImplementedError", "OverflowError", "RecursionError",
+    "RuntimeError", "StopIteration", "TypeError", "ValueError", "ZeroDivisionError",
+)
+SAFE_BUILTINS: Dict[str, Any] = {name: getattr(_builtins, name) for name in _SAFE_BUILTIN_NAMES}
+SAFE_BUILTINS["__import__"] = _guarded_import
+
+
+def exec_generated(source: bytes, filename: str) -> Dict[str, Any]:
+    """Execute generated tool source in the restricted namespace and return its globals."""
+    ns: Dict[str, Any] = {"__builtins__": dict(SAFE_BUILTINS), "__name__": "custom_tool"}
+    exec(compile(source, filename, "exec"), ns)  # gated + self-tested upstream; restricted here
+    return ns
 
 
 def _load_run(py_path: Path) -> Callable:
@@ -39,8 +101,7 @@ def _load_run(py_path: Path) -> Callable:
     fn = _CACHE.get(key)
     if fn is not None:
         return fn
-    ns: Dict[str, Any] = {}
-    exec(compile(source, str(py_path), "exec"), ns)  # gated + self-tested upstream
+    ns = exec_generated(source, str(py_path))
     fn = ns.get("run")
     if not callable(fn):
         raise ValueError(f"custom tool {py_path} defines no run()")

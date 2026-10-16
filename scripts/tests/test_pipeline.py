@@ -375,17 +375,23 @@ class SlurmOutageTest(FakeSlurmLoopTest):
 
 class SiteSettingsTest(unittest.TestCase):
     def test_site_problems_lists_unset_placeholder_and_missing_paths(self):
+        from site_env import fake_site
+        site = fake_site()
         env = {"HTT_SLURM_ACCOUNT": "acct", "HTT_SLURM_PARTITION": "<gpu-partition>", "HTT_SLURM_QOS": "", "CONTAINER_MOUNTS": "/:/",
-               "SAH_MODEL_PATH": "/nonexistent/model", "SAH_SERVED_MODEL": "m", "SAH_IMAGE": str(ROOT / "pyproject.toml"),
-               "VLLM_ENV": str(ROOT), "SAH_PYTHON": str(ROOT / "pyproject.toml")}
+               "SAH_MODEL_PATH": "/nonexistent/model", "SAH_SERVED_MODEL": "m", "SAH_IMAGE": str(site / "image.sqsh"),
+               "VLLM_ENV": str(ROOT), "SAH_PYTHON": str(site / "runtime" / "bin" / "python"), "SAH_DATA_ROOT": str(site / "dataset"),
+               "NEXAU_ROOT": str(site / "nexau")}
         problems = pipeline.site_problems(env, train=False)
         self.assertTrue(any("HTT_SLURM_PARTITION is still a placeholder" in x for x in problems), problems)
-        self.assertTrue(any("HTT_SLURM_QOS is unset" in x for x in problems), problems)
-        self.assertTrue(any("SAH_MODEL_PATH does not exist" in x for x in problems), problems)
+        self.assertFalse(any("HTT_SLURM_QOS" in x for x in problems), "an empty QOS means the cluster default")
+        self.assertTrue(any(x.startswith("SAH_MODEL_PATH: /nonexistent/model does not exist") for x in problems), problems)
+        self.assertTrue(any(x.startswith("VLLM_ENV:") and x.endswith("bin/vllm does not exist") for x in problems), problems)
         self.assertFalse(any("TRAIN_ENV" in x for x in problems))
         self.assertTrue(any("TRAIN_ENV is unset" in x for x in pipeline.site_problems(env, train=True)))
-        env.update({"HTT_SLURM_PARTITION": "p", "HTT_SLURM_QOS": "q", "SAH_MODEL_PATH": str(ROOT)})
+        env.update({"HTT_SLURM_PARTITION": "p", "SAH_MODEL_PATH": str(site / "model"), "VLLM_ENV": str(site / "vllm")})
         self.assertEqual(pipeline.site_problems(env, train=False), [])
+        self.assertTrue(any("SAH_AHC_NATIVE_BIN" in x for x in pipeline.site_problems(dict(env, SAH_AHC_NATIVE_BIN="/nonexistent"), train=False,
+                                                                                        task_id="eft__ahc_simpletes__ahc039")))
 
     def test_prepare_fails_before_any_submission_when_the_site_file_is_incomplete(self):
         tmp = Path(tempfile.mkdtemp(prefix="htt_site_"))
@@ -414,6 +420,17 @@ class SiteSettingsTest(unittest.TestCase):
                          ["/opt/time", "/no_such_mount_htt/run"])
         self.assertEqual(pipeline.mount_sources("/a,/b:/c:ro"), [("/a", "/a"), ("/b", "/c")])
 
+    def test_symlinked_interpreter_under_a_mount_is_not_reported(self):
+        tmp = Path(tempfile.mkdtemp(prefix="htt_mount_"))
+        try:
+            (tmp / "env" / "bin").mkdir(parents=True)
+            link = tmp / "env" / "bin" / "python"
+            link.symlink_to("/no_such_container_dir_htt/python3.12")   # target exists only inside the container image
+            self.assertEqual(pipeline.unmounted(f"{tmp}:{tmp}", [link]), [])
+            self.assertEqual(pipeline.unmounted("/data:/data", [link]), [str(link)])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 class FreezeTreeTest(unittest.TestCase):
     def test_frozen_worktree_links_the_ignored_payloads(self):
@@ -436,6 +453,93 @@ class FreezeTreeTest(unittest.TestCase):
             self.assertEqual(pipeline.git(wt, "status", "--porcelain"), "")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class SlurmPortabilityTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="htt_port_"))
+        os.environ["FAKE_SLURM_DIR"] = str(self.tmp / "slurm")
+        os.environ["FAKE_STEP_SECONDS"] = "0.05"
+        for key in ("FAKE_FAIL_ROUNDS", "FAKE_ZERO_ADV_ROUNDS", "FAKE_FAIL_TRAIN", "FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL"):
+            os.environ.pop(key, None)
+
+    def tearDown(self):
+        for key in ("FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL"):
+            os.environ.pop(key, None)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def cfg(self, **over):
+        base = dict(campaign="t", name="port", task="hadamard", adv="v3", k=8, round_gpus=2, train_gpus=8, max_round=1,
+                    poll_seconds=0.1, heartbeat_minutes=1000, freeze=False, require_clean_tree=False,
+                    slurm_bin=str(FAKE), sah_root=str(ROOT), run_root=str(self.tmp / "runs"))
+        base.update(over)
+        return pipeline.Config.load(None, base)
+
+    def test_gres_fields_of_every_shape_are_counted(self):
+        for field, want in (("gres/gpu:2", 2), ("gres/gpu:h100:8", 8), ("gres/gpu:a100_80gb:4", 4), ("gpu:4(IDX:0-3)", 4),
+                            ("gres/gpu:8,gres/nvme:1", 8), ("N/A", 0), ("", 0), ("gres/nvme:1", 0)):
+            self.assertEqual(pipeline.gpus_in_gres(field), want, field)
+
+    def test_zero_caps_are_values_not_defaults(self):
+        runner = pipeline.Runner(self.cfg(gpu_cap=0, max_jobs=0), quiet=True)
+        self.assertEqual(runner.caps(), (0, 0))
+        self.assertEqual(pipeline.Runner(self.cfg(gpu_cap=7, max_jobs=3), quiet=True).caps(), (7, 3))
+
+    def test_job_without_accounting_record_completes_on_its_artefacts(self):
+        os.environ["FAKE_NO_ACCOUNTING"] = "1"
+        runner = pipeline.Runner(self.cfg(), quiet=True)
+        runner.run_loop()
+        log = (runner.run / "pipeline.log").read_text()
+        self.assertIn("accounting database has no record", log)
+        self.assertTrue((runner.run / "DONE").is_file())
+        self.assertTrue((runner.run / "rounds" / "round001" / "round_summary.json").is_file())
+
+    def test_submission_preflight_reports_a_rejected_layout_before_round_one(self):
+        os.environ["FAKE_TEST_ONLY_FAIL"] = "1"
+        runner = pipeline.Runner(self.cfg(), quiet=True)
+        with self.assertRaises(SystemExit) as ctx:
+            runner.prepare()
+        self.assertIn("Slurm rejects the round job", str(ctx.exception))
+        self.assertIn("Requested node configuration is not available", str(ctx.exception))
+        self.assertFalse(list((runner.run / "gen").glob("_preflight_*")), "preflight scripts are removed")
+        runner.release()
+
+    def test_unset_slurm_keys_emit_comments_instead_of_sbatch_lines(self):
+        real = pipeline.load_env
+        pipeline.load_env = lambda root: {**real(root), "HTT_SLURM_ACCOUNT": "", "HTT_SLURM_PARTITION": "", "HTT_SLURM_QOS": ""}
+        try:
+            runner = pipeline.Runner(self.cfg(), quiet=True)
+            script = runner.dry_run()
+            text = Path(script).read_text()
+            for flag in ("--account", "--partition", "--qos"):
+                self.assertNotIn(f"#SBATCH {flag}=", text)
+                self.assertIn(f"# {flag}: cluster default", text)
+            self.assertIn("export RUN_ROOT=" + str(runner.run_root), text)
+            self.assertIn("not set; the jobs use the cluster's default", (runner.run / "pipeline.log").read_text())
+            self.assertEqual((runner.run / "GPUS").read_text().strip(), "2")
+            self.assertEqual((runner.run / "GPU_LAYOUT").read_text().strip(), "2")
+            runner.release()
+        finally:
+            pipeline.load_env = real
+
+    def test_round_resources_are_configurable(self):
+        runner = pipeline.Runner(self.cfg(round_cpus=16, round_mem="120G", round_gpus=4, eval_gpus=1), quiet=True)
+        script = runner.dry_run()
+        text = Path(script).read_text()
+        self.assertIn("#SBATCH --cpus-per-task=16", text)
+        self.assertIn("#SBATCH --mem=120G", text)
+        self.assertIn("#SBATCH --gres=gpu:4", text)
+        self.assertEqual((runner.run / "GPU_LAYOUT").read_text().strip(), "4 eval_gpus=1")
+        runner.release()
+
+    def test_training_skipped_by_the_runner_leaves_the_same_marker_as_the_worker(self):
+        os.environ["FAKE_ZERO_ADV_ROUNDS"] = "1"
+        runner = pipeline.Runner(self.cfg(max_round=2), quiet=True)
+        runner.run_loop()
+        td = runner.run / "training" / "round001"
+        self.assertTrue((td / "TRAIN_COMPLETE").is_file())
+        self.assertIn("updated=false", (td / "TRAIN_COMPLETE").read_text())
+        os.environ.pop("FAKE_ZERO_ADV_ROUNDS", None)
 
 
 if __name__ == "__main__":

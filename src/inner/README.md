@@ -74,7 +74,7 @@ source config/env.sh   # HarnessTTT root
 cd src && python3 -m inner.run_baseline --seed-only --tiers tier0_cpu_nosetup
 
 # real baseline (one-time env, then a 4-GPU serve+run job):
-bash scripts/setup_inner_env.sh                    # -> $ENV_ROOT/self-adapt-inner
+bash scripts/setup/setup_runtime_env.sh            # -> $SAH_RUNTIME_ENV (Python 3.12 env with NexAU and the evaluator deps)
 sbatch scripts/serve_and_run_baseline.sbatch       # serves Qwen3.5-9B + runs run_baseline
 ```
 

@@ -637,6 +637,26 @@ def _audit_generated_middlewares(
     return audit
 
 
+def _module_level_extras(source: str, hook_name: str):
+    """Top-level statements of ``source`` other than the hook def, a docstring and ``from __future__ import annotations``
+    (they would be dropped when the hook is spliced into the wrapper, so a module-level import becomes a NameError)."""
+    import ast
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    extras = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == hook_name:
+            continue
+        if isinstance(node, ast.Expr) and isinstance(getattr(node, "value", None), ast.Constant) and isinstance(node.value.value, str):
+            continue
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            continue
+        extras.append(type(node).__name__ + (f" {node.name}" if hasattr(node, "name") else ""))
+    return extras
+
+
 def _extract_hook_def(source: str, hook_name: str):
     """Return the source of ``def <hook_name>(...)`` if it parses, else None."""
     import ast

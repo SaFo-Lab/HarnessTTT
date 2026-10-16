@@ -37,7 +37,11 @@ CLOSE_TURN = {"role": "user", "content": "ok"}
 
 
 def _h1_tool_schemas() -> list:
-    import yaml
+    try:
+        import yaml
+    except ImportError:
+        raise SystemExit("PyYAML is required to read the H1 agent.yaml: `pip install pyyaml` into the Python that runs "
+                         "grpo_to_replay.py (the submitting host's python3 or HARNESSTTT_HOST_PYTHON)") from None
     schemas = []
     agent = yaml.safe_load(H1_AGENT_YAML.read_text()) or {}
     mounted = agent.get("tools") or []

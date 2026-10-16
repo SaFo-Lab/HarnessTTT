@@ -61,14 +61,26 @@ class OverrideTest(unittest.TestCase):
         body = cfg.llm_config.extra_params.get("extra_body", {})
         for key in VLLM_ONLY_EXTRA_BODY:
             self.assertNotIn(key, body)
-        self.assertEqual(body, {"seed": 1})                                        # OpenAI understands seed; it stays
+        self.assertEqual(body, {"seed": 1, "max_completion_tokens": 10})           # OpenAI understands seed; the cap moves
         self.assertNotIn("extra_params", cfg.llm_config.extra_params)
+        self.assertEqual(set(cfg.llm_config.additional_drop_params), {"max_tokens", "temperature", "top_p"})
+
+    def test_hosted_api_keeps_sampling_on_request(self):
+        cfg = fake_config({})
+        _override_llm(cfg, LLMEndpoint(vllm_extras=False, enable_thinking=None, hosted_sampling=True), preserve_sampling=True)
+        self.assertEqual(set(cfg.llm_config.additional_drop_params), {"max_tokens"})
 
     def test_empty_extra_body_is_not_sent(self):
         cfg = fake_config({})
-        _override_llm(cfg, LLMEndpoint(top_k=None, enable_thinking=None, vllm_extras=False), preserve_sampling=False)
+        _override_llm(cfg, LLMEndpoint(top_k=None, enable_thinking=None, vllm_extras=True), preserve_sampling=False)
         self.assertNotIn("extra_body", cfg.llm_config.extra_params)
         self.assertEqual((cfg.llm_config.temperature, cfg.llm_config.top_p), (0.7, 0.95))
+
+    def test_hosted_api_moves_the_token_cap(self):
+        cfg = fake_config({})
+        _override_llm(cfg, LLMEndpoint(top_k=None, enable_thinking=None, vllm_extras=False, max_tokens=4096), preserve_sampling=False)
+        self.assertEqual(cfg.llm_config.extra_params["extra_body"], {"max_completion_tokens": 4096})
+        self.assertIn("max_tokens", cfg.llm_config.additional_drop_params)
 
 
 if __name__ == "__main__":

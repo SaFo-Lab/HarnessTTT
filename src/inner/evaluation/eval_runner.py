@@ -134,8 +134,14 @@ def evaluate_program(
         d = json.loads(res_path.read_text())
     except Exception as e:
         return EvalOutcome(0.0, 0.0, f"bad worker result: {e}", dt)
+    try:
+        score = float(d.get("combined_score", 0.0))
+    except (TypeError, ValueError):
+        return EvalOutcome(0.0, 0.0, f"non-numeric combined_score: {d.get('combined_score')!r}", dt)
+    if score != score or score in (float("inf"), float("-inf")):
+        return EvalOutcome(0.0, 0.0, f"non-finite combined_score: {score}", dt)
     return EvalOutcome(
-        combined_score=float(d.get("combined_score", 0.0)),
+        combined_score=score,
         validity=float(d.get("validity", 0.0)),
         error=d.get("error"),
         wall_s=dt,

@@ -47,10 +47,10 @@ externally fixed.
 | **`harness/`** | **H1 — the FIXED proposer harness**: read-only shell-shaped inspection plus H2 file edit/delete/validate/submit tools. Never mutated during training; hashed for provenance. |
 | `h2_workspace.py` | candidate-isolated H2 filesystem, safe path handling, mount/file/prompt checks, semantic extraction, canonical compile validation |
 | `harness_spec.py` | spec schema, fail-closed validation, canonical hash, base-spec extraction, diff-vs-base |
-| `h1.py` | round-context builder (user message = base spec + per-task baseline) + H1 package hash |
+| `proposing/proposer_io.py` | round-context builder (user message = base spec + per-task baseline) + H1 package hash |
 | `propose_session.py` | ProposeSession state + contextvar bridge behind H1's filesystem tools |
 | `propose.py` | run the H1 agent K times (threaded across replicas) → CandidateRecords (+ full trajectories for GRPO) |
-| `materialize.py` | effective spec → full candidate package (matches `src/inner/harness_candidate/candNN` scaffold) |
+| `compiling/materialize.py` | effective spec → full candidate package (`rounds/roundNNN/tasks/<task>/candNN/`: agent.yaml, prompt.md, tools/, custom_tools/, skills/, middlewares/) |
 | `rewards.py` | per-task normalized rewards vs `results/baseline_h2_20ev.json`, GRPO group advantages |
 | `outer_round.py` | CLI: `propose` / `collect` |
 
@@ -82,4 +82,4 @@ convolve2d_full_fill, psd_cone_projection.
 In round 1 phi = 0, so M_phi ≡ M0 weights and one served checkpoint plays both
 roles. From round 2 (trained phi) the worker must serve the merged M_phi for
 `propose` and the frozen base for the inner loop — flagged TODO(round2) in
-`scripts/_outer_round_worker.sh`.
+`scripts/pipeline/worker_round.sh`.

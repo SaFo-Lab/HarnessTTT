@@ -32,10 +32,13 @@ TOKEN_BUDGET="${SAH9B_TOKEN_BUDGET:-18000}"; DRY="${SAH9B_TRAIN_DRY_RUN:-0}"
 TRAIN_ENV="${TRAIN_ENV:?config/local.env must set TRAIN_ENV (torch/transformers/flash-linear-attention env for slime)}"
 : "${SLIME_ROOT:?}" "${MEGATRON_ROOT:?config/local.env must set MEGATRON_ROOT}" "${SAH_MODEL_PATH:?config/local.env must set SAH_MODEL_PATH}"
 TRAINER="$SAH_ROOT/src/trainer"; TFPATCH="$TRAINER/tfpatch"
-NGPU="${SLURM_GPUS_ON_NODE:-8}"
+NGPU="${SLURM_GPUS_ON_NODE:?no GPU allocation (SLURM_GPUS_ON_NODE)}"
 PY="${SAH_PYTHON:-}"; [ -n "$PY" ] && [ -x "$PY" ] || PY="${HARNESSTTT_HOST_PYTHON:-python3}"   # stdlib json helpers only
 log(){ echo "[$(date -Is)] $*"; }
 mkdir -p "$TRAIN_DIR"; cd "$TRAIN_DIR"
+# any failure from here on leaves a FAILED marker (the runner retries once, then stops); stop_ray is a no-op until Ray starts
+stop_ray(){ :; }
+trap 'rc=$?; stop_ray; [ "$rc" -ne 0 ] && [ ! -s "$TRAIN_DIR/TRAIN_COMPLETE" ] && printf "failed_utc=%s rc=%s\n" "$(date -Is -u)" "$rc" > "$TRAIN_DIR/FAILED"; exit $rc' EXIT
 # a previous attempt that FAILED leaves ckpt/merged/debug behind -> archive them so this attempt starts clean
 if [ -e "$TRAIN_DIR/FAILED" ] || [ -e "$TRAIN_DIR/ckpt" ] || [ -e "$TRAIN_DIR/merged" ]; then
   arch="$TRAIN_DIR/attempt_failed_$(date +%Y%m%d-%H%M%S)"; mkdir -p "$arch"
@@ -100,7 +103,6 @@ fi
 # --- ray head (single node) ---
 RAY_PORT=$((20000 + ${SLURM_JOB_ID:-1} % 19000)); PB=$((13000 + (${SLURM_JOB_ID:-1} % 7) * 256))
 RAY_TMP="/tmp/htt-ray-${SLURM_JOB_ID:-x}"
-stop_ray(){ :; }
 if [ "$DRY" != 1 ]; then
   mkdir -p "$RAY_TMP"
   setsid "$TRAIN_ENV/bin/ray" start --head --block --node-ip-address=127.0.0.1 --port "$RAY_PORT" \
@@ -109,7 +111,6 @@ if [ "$DRY" != 1 ]; then
     > "$TRAIN_DIR/ray_head.log" 2>&1 &
   RAY_PID=$!
   stop_ray(){ set +e; kill -TERM -- "-$RAY_PID" 2>/dev/null; for _ in $(seq 1 30); do kill -0 "$RAY_PID" 2>/dev/null || break; sleep 1; done; kill -KILL -- "-$RAY_PID" 2>/dev/null; set -e; }
-  trap 'rc=$?; stop_ray; [ "$rc" -ne 0 ] && [ ! -s "$TRAIN_DIR/TRAIN_COMPLETE" ] && printf "failed_utc=%s rc=%s\n" "$(date -Is -u)" "$rc" > "$TRAIN_DIR/FAILED"; exit $rc' EXIT
   ready=0; for _ in $(seq 1 90); do "$TRAIN_ENV/bin/ray" status --address "127.0.0.1:$RAY_PORT" > "$TRAIN_DIR/ray_status.log" 2>&1 && grep -Fq 'Active:' "$TRAIN_DIR/ray_status.log" && { ready=1; break; }; kill -0 "$RAY_PID" 2>/dev/null || break; sleep 2; done
   [ "$ready" = 1 ] || { log "ray head did not come up"; exit 1; }
   export RAY_ADDRESS="127.0.0.1:$RAY_PORT"

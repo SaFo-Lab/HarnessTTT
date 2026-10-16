@@ -78,6 +78,21 @@ def _llm_transport_provenance(args) -> dict:
     }
 
 
+def _redact_argv(argv: list) -> list:
+    """argv as recorded in provenance.json: never the API key."""
+    out, skip = [], False
+    for tok in argv:
+        if skip:
+            out.append("<redacted>"); skip = False
+        elif tok == "--api-key":
+            out.append(tok); skip = True
+        elif tok.startswith("--api-key="):
+            out.append("--api-key=<redacted>")
+        else:
+            out.append(tok)
+    return out
+
+
 def _select(args) -> list:
     if args.ids:
         return [get_task(i) for i in args.ids]
@@ -106,7 +121,7 @@ def _agent_run(task: EFTTask, args, out_dir: Path) -> dict:
                      temperature=args.temperature, top_p=args.top_p, max_tokens=args.max_tokens,
                      timeout=args.llm_timeout, max_retries=args.llm_max_retries,
                      enable_thinking=(None if args.no_vllm_extras else args.thinking),
-                     seed=args.seed, vllm_extras=not args.no_vllm_extras)
+                     seed=args.seed, vllm_extras=not args.no_vllm_extras, hosted_sampling=args.keep_sampling)
     if args.max_iters > 0:
         max_iters = args.max_iters
     elif args.harness_dir:
@@ -187,7 +202,9 @@ def main() -> None:
     ap.add_argument("--thinking", action="store_true", help="enable Qwen thinking (default off)")
     ap.add_argument("--no-vllm-extras", action="store_true",
                     help="do not send vLLM-only request fields (top_k, chat_template_kwargs, ...); required for OpenAI-compatible "
-                         "APIs that are not vLLM, e.g. api.openai.com")
+                         "APIs that are not vLLM, e.g. api.openai.com. The token cap is then sent as max_completion_tokens and "
+                         "temperature/top_p are left to the API's defaults (reasoning models reject them) unless --keep-sampling")
+    ap.add_argument("--keep-sampling", action="store_true", help="with --no-vllm-extras: still send temperature/top_p")
     ap.add_argument("--seed", type=int, default=None,
                     help="explicit decode seed recorded in every H2 result")
     # budget / eval
@@ -252,7 +269,7 @@ def main() -> None:
             ent = inherited.get(task.task_id)
             if not ent:
                 continue
-            text = ent["program"] if isinstance(ent, dict) else ent
+            text = ent.get("program") if isinstance(ent, dict) else ent
             if not isinstance(text, str) or not text:
                 raise ValueError(
                     f"seed-program registry entry for {task.task_id} has no program text"
@@ -301,7 +318,7 @@ def main() -> None:
             "dict returns may enforce a require_tools gate (finish exempt, "
             "auto-lift after 2 refusals, refusals consume no budget)"
         ),
-        "argv": sys.argv,
+        "argv": _redact_argv(sys.argv),
     }
     (out_dir / "provenance.json").write_text(json.dumps(provenance, indent=2))
     print(f"[run] {provenance['mode']} | {len(tasks)} tasks | out={out_dir}")

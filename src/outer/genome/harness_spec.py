@@ -446,6 +446,8 @@ def validate_mapping(data: Any) -> SpecValidation:
                     errors.append(f"new_middlewares[{i}].name: must match [a-z][a-z0-9_]{{2,31}}")
                 elif name in seen:
                     errors.append(f"new_middlewares[{i}].name: duplicate {name!r}")
+                elif name in ("budget_reminder", "stall_restart", "generated_context"):
+                    errors.append(f"new_middlewares[{i}].name: {name!r} is reserved for the fixed middleware")
                 else:
                     seen.add(name)
                 hook = mw.get("hook")
@@ -753,7 +755,7 @@ def read_base_spec(
 ) -> Dict[str, Any]:
     """Extract the mutable surface of an existing H2 package as a full spec."""
     package_dir = Path(package_dir)
-    agent = yaml.safe_load((package_dir / "agent.yaml").read_text())
+    agent = yaml.safe_load((package_dir / "agent.yaml").read_text(encoding="utf-8"))
 
     sys_file = package_dir / str(agent.get("system_prompt", "./system.md")).lstrip("./")
     if not sys_file.exists():  # candidate packages use prompt.md
@@ -770,7 +772,7 @@ def read_base_spec(
 
     skill_desc, skill_body = "", ""
     if skill_md is not None:
-        text = skill_md.read_text()
+        text = skill_md.read_text(encoding="utf-8")
         fm = re.match(r"---\n(.*?)\n---\n(.*)", text, re.DOTALL)
         if fm:
             meta = yaml.safe_load(fm.group(1)) or {}
@@ -786,7 +788,7 @@ def read_base_spec(
     for name in _TOOL_DESC_FIELDS:
         ty = package_dir / "tools" / f"{name}.tool.yaml"
         if ty.exists():
-            tdoc = yaml.safe_load(ty.read_text())
+            tdoc = yaml.safe_load(ty.read_text(encoding="utf-8"))
             if tdoc.get("name") in _TOOL_DESC_FIELDS:
                 tool_descs[tdoc["name"]] = str(tdoc.get("description", "")).strip()
 
@@ -822,7 +824,7 @@ def read_base_spec(
 
     return {
         "schema": SCHEMA_VERSION,
-        "system_prompt": sys_file.read_text().strip(),
+        "system_prompt": sys_file.read_text(encoding="utf-8").strip(),
         "skill_description": skill_desc.strip(),
         "skill_body": skill_body,
         "tool_descriptions": tool_descs,
@@ -860,7 +862,7 @@ def _read_generated(
     meta_path = package_dir / "meta.json"
     if meta_path.exists():
         try:
-            meta = json.loads(meta_path.read_text())
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
             if isinstance(meta.get("effective"), dict):
                 meta_effective = meta["effective"]
         except Exception as exc:
@@ -886,7 +888,7 @@ def _read_generated(
         schema_path = package_path(tool.get("yaml_path", ""))
         if not schema_path.is_file():
             raise ValueError(f"mounted generated tool {name!r} is missing {schema_path}")
-        doc = yaml.safe_load(schema_path.read_text()) or {}
+        doc = yaml.safe_load(schema_path.read_text(encoding="utf-8")) or {}
         local_code = package_dir / "custom_tools" / f"{name}.py"
         extra_kwargs = tool.get("extra_kwargs") or {}
         declared_code = package_path(
@@ -917,7 +919,7 @@ def _read_generated(
             "description": str(doc.get("description") or prior.get("description")
                                or f"generated tool {name}").strip(),
             "input_schema": input_schema,
-            "implementation_py": code_path.read_text(),
+            "implementation_py": code_path.read_text(encoding="utf-8"),
         })
     if tools:
         out["new_tools"] = tools
@@ -932,7 +934,7 @@ def _read_generated(
         skill_md = skill_dir if skill_dir.name == "SKILL.md" else skill_dir / "SKILL.md"
         if not skill_md.is_file():
             raise ValueError(f"mounted generated skill {name!r} is missing {skill_md}")
-        text = skill_md.read_text()
+        text = skill_md.read_text(encoding="utf-8")
         fm = re.match(r"---\n(.*?)\n---\n(.*)", text, re.DOTALL)
         prior = meta_rows["new_skills"].get(name, {})
         if fm:
@@ -960,7 +962,7 @@ def _read_generated(
         py = package_dir / "middlewares" / f"{name}.py"
         if not py.is_file():
             raise ValueError(f"mounted generated middleware {name!r} is missing {py}")
-        src = py.read_text()
+        src = py.read_text(encoding="utf-8")
         # recover the ORIGINAL user hook body (between sentinels), not the
         # nexau-importing wrapper — re-gating the wrapper would fail the import
         # whitelist and drop the inherited middleware.
@@ -969,7 +971,7 @@ def _read_generated(
         descriptor_path = package_dir / "middlewares" / f"{name}.middleware.yaml"
         descriptor: Dict[str, Any] = {}
         if descriptor_path.is_file():
-            descriptor = yaml.safe_load(descriptor_path.read_text()) or {}
+            descriptor = yaml.safe_load(descriptor_path.read_text(encoding="utf-8")) or {}
             if descriptor.get("name") not in (None, name):
                 raise ValueError(
                     f"middleware descriptor name mismatch for {name!r}"
@@ -1014,7 +1016,7 @@ def _read_generated(
                 )
     manifest_path = package_dir / "component_manifest.json"
     if verify_provenance and manifest_path.exists():
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         recorded_inventory = manifest.get("inventory") or {}
         if recorded_inventory != actual:
             raise ValueError(

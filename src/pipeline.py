@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import getpass
 import json
 import os
 import re
@@ -36,22 +37,34 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 MAIN_ROOT = Path(__file__).resolve().parents[1]
-TASK_IDS = {"cp26": "eft__math__circle_packing", "hadamard": "eft__math__hadamard_maximal_det",
-            "ac1": "eft__math__first_autocorr_ineq", "ac2": "eft__math__second_autocorr_ineq",
-            "erdos": "eft__math__erdos_min_overlap", "trimul": "gpu_mode__trimul", "trimul_lb": "gpu_mode__trimul_lb", "mla_decode": "gpu_mode__mla_decode"}
-# combined_score -> display metric: ("mul", c, unit) shows score*c, ("div", c, unit) shows c/score
-DISPLAY = {"eft__math__circle_packing": ("mul", 2.635, "sum_radii"), "eft__math__hadamard_maximal_det": ("mul", 1.0, "det_ratio"),
-           "eft__math__second_autocorr_ineq": ("mul", 0.896280, "c2"), "eft__math__first_autocorr_ineq": ("div", 1.505293, "c1"),
-           "eft__math__erdos_min_overlap": ("div", 0.380922, "c5"), "gpu_mode__trimul": ("div", 3000.0, "us"), "gpu_mode__trimul_lb": ("div", 3000.0, "us"),
-           "gpu_mode__mla_decode": ("div", 3000.0, "us")}
-def fmt_metric(kind: str, c: float, score: float) -> float:
-    """combined_score -> display metric (see DISPLAY)."""
-    return (c / score) if (kind == "div" and score) else (score * c)
+sys.path.insert(0, str(MAIN_ROOT / "src")) if str(MAIN_ROOT / "src") not in sys.path else None
+from inner.tasks.aliases import DISPLAY, TASK_IDS, fmt_metric  # noqa: E402,F401  (one alias/display table for every tool)
 
 
 ADVS = ("v3", "v2", "grpo", "legacy", "anchored")
 ACTIVE = {"PENDING", "RUNNING", "CONFIGURING", "COMPLETING", "SUSPENDED", "REQUEUED", "RESIZING"}
 TERMINAL = {"COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY", "PREEMPTED", "DEADLINE", "BOOT_FAIL", "REVOKED"}
+
+
+def _user() -> str:
+    """The submitting user as Slurm knows them (USER may be unset under cron/systemd launches)."""
+    try:
+        return getpass.getuser()
+    except Exception:
+        return os.environ.get("USER", "")
+
+
+def gpus_in_gres(field: str) -> int:
+    """GPUs in one squeue ``%b`` field: ``gres/gpu:2``, ``gres/gpu:h100:8``, ``gpu:4(IDX:0-3)``, ``gres/gpu:8,gres/nvme:1``; ``N/A`` -> 0."""
+    total = 0
+    for item in field.split(","):
+        m = re.search(r"(?:^|/)gpu(?::[A-Za-z][\w.-]*)?:(\d+)(?:\(|\s*$)", item.strip())
+        if m:
+            total += int(m.group(1))
+    return total
+
+
+_UNKNOWN_WAIT_SECONDS = 900.0   # a job gone from squeue without an accounting record and without artefacts: how long to keep waiting
 
 
 class SlurmUnavailable(RuntimeError):
@@ -129,12 +142,19 @@ class Config:
     # (8 x 55 GB for a 27B), so the job takes the whole node's memory by default (--mem=0); set e.g. "1000G" where mem=0 is refused
     train_cpus: int = 32
     train_mem: str = "0"
+    # resources of a round / baseline job; None = 12 CPUs and 75-100 GB per GPU (round_gpus 1/2/4 -> 12/24/48 CPUs, 100/200/300 GB)
+    round_cpus: Optional[int] = None
+    round_mem: Optional[str] = None
 
     @classmethod
     def load(cls, path: Optional[Path], overrides: Dict[str, Any]) -> "Config":
         data: Dict[str, Any] = {}
         if path is not None:
-            import yaml  # PyYAML: present in the SAH runtime env and the login-node python3
+            try:
+                import yaml  # PyYAML: the only third-party module the submitting host needs
+            except ImportError:
+                raise SystemExit("PyYAML is required to read pipeline configs: `pip install pyyaml` into this Python "
+                                 "(or run src/pipeline.py with one that has it, e.g. the HarnessTTT venv)") from None
             loaded = yaml.safe_load(path.read_text()) or {}
             if not isinstance(loaded, dict):
                 raise SystemExit(f"{path}: expected a mapping at the top level")
@@ -147,8 +167,9 @@ class Config:
         cfg = cls(**data)
         if cfg.adv not in ADVS:
             raise SystemExit(f"adv must be one of {ADVS}, got {cfg.adv!r}")
-        for name in ("lr", "kl", "train_mem"):
-            setattr(cfg, name, str(getattr(cfg, name)))
+        for name in ("lr", "kl", "train_mem", "round_mem"):
+            if getattr(cfg, name) is not None:
+                setattr(cfg, name, str(getattr(cfg, name)))
         return cfg
 
     @property
@@ -170,13 +191,19 @@ def load_env(sah_root: Path) -> Dict[str, str]:
     return env
 
 
-# site settings every job needs (config/local.env); a missing or placeholder value fails the run before anything is submitted
-SITE_KEYS_JOB = ("HTT_SLURM_ACCOUNT", "HTT_SLURM_PARTITION", "HTT_SLURM_QOS", "CONTAINER_MOUNTS", "SAH_MODEL_PATH",
-                 "SAH_SERVED_MODEL", "SAH_IMAGE", "VLLM_ENV", "SAH_PYTHON")
+# site settings every job needs (config/local.env); a missing or placeholder value fails the run before anything is submitted.
+# Slurm account / partition / QOS are optional (their #SBATCH lines are emitted only when set); SLURM_KEYS only reject placeholders.
+SITE_KEYS_JOB = ("CONTAINER_MOUNTS", "SAH_MODEL_PATH", "SAH_SERVED_MODEL", "SAH_IMAGE", "VLLM_ENV", "SAH_PYTHON", "SAH_DATA_ROOT", "NEXAU_ROOT")
 SITE_KEYS_TRAIN = ("TRAIN_ENV", "SLIME_ROOT", "MEGATRON_ROOT")
+SLURM_KEYS = ("HTT_SLURM_ACCOUNT", "HTT_SLURM_PARTITION", "HTT_SLURM_QOS")
+# what the job scripts open before srun (the same checks the templates make, so a typo fails here and not in the queue):
+# (env key, relative entry, kind) with kind "dir" | "file" | "entry" (exists, possibly a symlink into the container image)
+SITE_PATHS_JOB = (("SAH_MODEL_PATH", "", "dir"), ("SAH_IMAGE", "", "file"), ("VLLM_ENV", "bin/vllm", "entry"), ("SAH_PYTHON", "", "entry"),
+                  ("SAH_DATA_ROOT", "MANIFEST_eft.json", "file"), ("NEXAU_ROOT", "", "dir"))
+SITE_PATHS_TRAIN = (("TRAIN_ENV", "bin/python", "entry"), ("SLIME_ROOT", "", "dir"), ("MEGATRON_ROOT", "", "dir"))
 
 
-def site_problems(env: Dict[str, str], *, train: bool = True) -> List[str]:
+def site_problems(env: Dict[str, str], *, train: bool = True, task_id: str = "") -> List[str]:
     """Settings of config/local.env that are unset, still the example's ``<placeholder>``, or point at nothing."""
     problems: List[str] = []
     keys = SITE_KEYS_JOB + (SITE_KEYS_TRAIN if train else ())
@@ -186,10 +213,21 @@ def site_problems(env: Dict[str, str], *, train: bool = True) -> List[str]:
             problems.append(f"{key} is unset")
         elif "<" in value or ">" in value:
             problems.append(f"{key} is still a placeholder: {value}")
-    for key, want in (("SAH_MODEL_PATH", "dir"), ("SAH_IMAGE", "file")):
+    for key in SLURM_KEYS:
         value = (env.get(key) or "").strip()
-        if value and "<" not in value and not (Path(value).is_dir() if want == "dir" else Path(value).is_file()):
-            problems.append(f"{key} does not exist: {value}")
+        if "<" in value or ">" in value:
+            problems.append(f"{key} is still a placeholder: {value} (leave it empty to use the cluster default)")
+    checks = list(SITE_PATHS_JOB) + (list(SITE_PATHS_TRAIN) if train else [])
+    if "ahc" in task_id:
+        checks.append(("SAH_AHC_NATIVE_BIN", "docker", "entry"))
+    for key, rel, kind in checks:
+        value = (env.get(key) or "").strip()
+        if not value or "<" in value:
+            continue
+        path = Path(value) / rel if rel else Path(value)
+        ok = path.is_dir() if kind == "dir" else path.is_file() if kind == "file" else os.path.lexists(path)
+        if not ok:
+            problems.append(f"{key}: {path} does not exist")
     return problems
 
 
@@ -206,23 +244,23 @@ def mount_sources(container_mounts: str) -> List[Tuple[str, str]]:
 
 
 def unmounted(container_mounts: str, paths: List[Any]) -> List[str]:
-    """Paths the container would not see under the same name: no mount source covers them with src == dst."""
+    """Paths the container would not see under the same name: no mount source covers them with src == dst.
+
+    A path is checked as given (absolute, symlinks kept) and fully resolved; either form under a mount counts, because
+    a venv's ``bin/python`` may be a symlink to an interpreter that exists only inside the container image.
+    """
     mounts = mount_sources(container_mounts)
+    bases = []
+    for src, dst in mounts:
+        if src == dst:
+            bases.extend({Path(os.path.abspath(src)), Path(src).resolve()})
     missing: List[str] = []
     for raw in paths:
         if not raw:
             continue
-        real = Path(str(raw)).resolve()
-        covered = False
-        for src, dst in mounts:
-            if src != dst:
-                continue
-            base = Path(src).resolve()
-            if real == base or base in real.parents:
-                covered = True
-                break
-        if not covered:
-            missing.append(str(real))
+        forms = {Path(os.path.abspath(str(raw))), Path(str(raw)).resolve()}
+        if not any(form == base or base in form.parents for form in forms for base in bases):
+            missing.append(str(raw))
     return missing
 
 
@@ -314,10 +352,16 @@ class Runner:
             pid = (self.run / "pipeline.pid").read_text().strip() if (self.run / "pipeline.pid").is_file() else "?"
             raise SystemExit(f"another pipeline.py (pid {pid}) drives {self.run}; stop it first")
         (self.run / "pipeline.pid").write_text(f"{os.getpid()}\n")
-        problems = site_problems(self.env, train=self.cfg.max_round > 1)
+        problems = site_problems(self.env, train=self.cfg.max_round > 1, task_id=self.cfg.task_id)
         if problems:
             raise SystemExit("site settings incomplete; edit config/local.env (template: config/local.env.example):\n  - "
                              + "\n  - ".join(problems))
+        unset = [k for k in SLURM_KEYS if not (self.env.get(k) or "").strip()]
+        if unset:
+            self.log(f"note: {', '.join(unset)} not set; the jobs use the cluster's default account/partition/QOS")
+        qos = (self.env.get("HTT_SLURM_QOS") or "").strip()
+        if self.env.get("HARNESSTTT_REQUIRE_LOW_QOS") == "1" and not qos.endswith("_low"):
+            raise SystemExit(f"HARNESSTTT_REQUIRE_LOW_QOS=1 but HTT_SLURM_QOS={qos!r} is not a *_low QOS (site policy)")
         if self.cfg.freeze:
             self.sah_root = freeze_tree(self.main_root, self.camp / "worktrees", self.log)
             self.env = load_env(self.sah_root)
@@ -337,13 +381,15 @@ class Runner:
             elif path.read_text().strip() != str(value):
                 raise SystemExit(f"{path} holds {path.read_text().strip()!r} but the config says {value!r}; "
                                  f"a run dir is bound to one task/arm/K")
-        # the GPU layout of a round job is a resource setting (it changes nothing about the experiment): record changes
-        gpus_path = self.run / "GPUS"
-        gpus_now = f"{self.cfg.round_gpus}" + (f" eval_gpus={self.cfg.eval_gpus}" if self.cfg.eval_gpus else "") + \
+        # the GPU layout of a round job is a resource setting (it changes nothing about the experiment): record changes.
+        # GPUS stays a bare integer (chain.sh / restart_from.sh read it); the full layout goes to GPU_LAYOUT.
+        layout_path = self.run / "GPU_LAYOUT"
+        layout_now = f"{self.cfg.round_gpus}" + (f" eval_gpus={self.cfg.eval_gpus}" if self.cfg.eval_gpus else "") + \
             (f" vllm_tp={self.cfg.vllm_tp}" if self.cfg.vllm_tp > 1 else "")
-        if gpus_path.is_file() and gpus_path.read_text().strip() != gpus_now:
-            self.log(f"round GPU layout changed: {gpus_path.read_text().strip()!r} -> {gpus_now!r} (applies from the next submitted job)")
-        gpus_path.write_text(gpus_now + "\n")
+        if layout_path.is_file() and layout_path.read_text().strip() != layout_now:
+            self.log(f"round GPU layout changed: {layout_path.read_text().strip()!r} -> {layout_now!r} (applies from the next submitted job)")
+        layout_path.write_text(layout_now + "\n")
+        (self.run / "GPUS").write_text(f"{self.cfg.round_gpus}\n")
         brief = Path(self.cfg.brief_dir) if self.cfg.brief_dir else self.camp / "briefs_none"
         brief.mkdir(parents=True, exist_ok=True)
         self.brief_dir = brief
@@ -391,6 +437,7 @@ class Runner:
                  f" | model {self.env['SAH_MODEL_PATH']} tp {self.cfg.vllm_tp} max_model_len {self.cfg.max_model_len}")
 
     # ---- paths & state -------------------------------------------------------------------------------------------------
+        self.preflight_submission()
     def apply_model_override(self) -> None:
         """A lineage's model_path/served_model replace the tree's SAH_MODEL_PATH/SAH_SERVED_MODEL everywhere the runner uses them."""
         if self.cfg.model_path:
@@ -463,7 +510,7 @@ class Runner:
 
     def queued_job_named(self, name: str) -> Optional[str]:
         """Id of the user's queued/running job with this exact name (a submission whose reply was lost is still real)."""
-        out = self._slurm_run(["squeue", "-u", os.environ.get("USER", ""), "-h", "-o", "%i|%j|%T"])
+        out = self._slurm_run(["squeue", "-u", _user(), "-h", "-o", "%i|%j|%T"])
         if out.returncode != 0:
             raise SlurmUnavailable(f"squeue -u: {out.stderr.strip()[:200]}")
         for line in out.stdout.splitlines():
@@ -532,22 +579,21 @@ class Runner:
         return "UNKNOWN"
 
     def user_load(self) -> Tuple[int, int]:
-        out = self._slurm_run(["squeue", "-u", os.environ.get("USER", ""), "-h", "-o", "%b"])
+        out = self._slurm_run(["squeue", "-u", _user(), "-h", "-o", "%b"])
         if out.returncode != 0:
             raise SlurmUnavailable(f"squeue -u: {out.stderr.strip()[:200]}")   # an error is not an empty queue
         jobs, gpus = 0, 0
         for line in out.stdout.splitlines():
-            jobs += 1
-            m = re.search(r"gpu[^0-9]*(\d+)\s*$", line.strip())
-            if m:
-                gpus += int(m.group(1))
+            if line.strip():
+                jobs += 1
+                gpus += gpus_in_gres(line)
         return jobs, gpus
 
     def caps(self) -> Tuple[int, int]:
         cap_file = self.camp / "GPU_CAP"
         gpu_cap = int(cap_file.read_text().strip()) if cap_file.is_file() else \
-            int(self.cfg.gpu_cap or self.env.get("HARNESSTTT_GPU_CAP") or 48)
-        max_jobs = int(self.cfg.max_jobs or self.env.get("HARNESSTTT_MAX_JOBS") or 15)
+            int(self.cfg.gpu_cap if self.cfg.gpu_cap is not None else (self.env.get("HARNESSTTT_GPU_CAP") or 48))
+        max_jobs = int(self.cfg.max_jobs if self.cfg.max_jobs is not None else (self.env.get("HARNESSTTT_MAX_JOBS") or 15))
         return gpu_cap, max_jobs
 
     def earlier_waiter(self, since: float) -> Optional[str]:
@@ -607,17 +653,32 @@ class Runner:
             mark.unlink(missing_ok=True)
 
     # ---- templates -----------------------------------------------------------------------------------------------------
+    def job_resources(self, gpus: int) -> Tuple[int, str]:
+        """CPUs and memory of a round / baseline job: the config's round_cpus / round_mem, else 12 CPUs and 75-100 GB per GPU."""
+        cpus = self.cfg.round_cpus if self.cfg.round_cpus is not None else {1: 12, 2: 24, 4: 48}.get(gpus, 12 * gpus)
+        mem = self.cfg.round_mem if self.cfg.round_mem is not None else {1: "100G", 2: "200G", 4: "300G"}.get(gpus, f"{75 * gpus}G")
+        return int(cpus), str(mem)
+
+    def sbatch_lines(self) -> Dict[str, str]:
+        """``#SBATCH --account/--partition/--qos`` lines, or a comment when the site leaves the value to the cluster default."""
+        out: Dict[str, str] = {}
+        for key, flag in (("HTT_SLURM_ACCOUNT", "account"), ("HTT_SLURM_PARTITION", "partition"), ("HTT_SLURM_QOS", "qos")):
+            value = (self.env.get(key) or "").strip()
+            out[f"SBATCH_{flag.upper()}"] = f"#SBATCH --{flag}={value}" if value else f"# --{flag}: cluster default ({key} not set)"
+        return out
+
     def common_mapping(self) -> Dict[str, Any]:
         g = self.cfg.round_gpus
-        cpus, mem = {1: (12, "100G"), 2: (24, "200G"), 4: (48, "300G")}.get(g, (12 * g, f"{75 * g}G"))
+        cpus, mem = self.job_resources(g)
         e = self.env
         return {
+            **self.sbatch_lines(), "RUN_ROOT": self.run_root,
             "RUN": self.run, "SAH_ROOT": self.sah_root, "PIPELINE_DIR": self.sah_root / "scripts" / "pipeline",
             "ENV_FILE": self.sah_root / "config" / "env.sh", "TASK_ID": self.cfg.task_id, "K": self.cfg.k, "ADV": self.cfg.adv,
             "H1_SEED": self.cfg.h1_seed, "MAX_ROUND": self.cfg.max_round, "BRIEF_DIR": self.brief_dir, "GPUS": g, "CPUS": cpus,
             "MEM": mem, "TRAIN_GPUS": self.cfg.train_gpus, "TRAIN_CPUS": self.cfg.train_cpus, "TRAIN_MEM": self.cfg.train_mem,
             "TOKEN_BUDGET": self.cfg.token_budget, "LR": self.cfg.lr,
-            "KL": self.cfg.kl, "ACCOUNT": e["HTT_SLURM_ACCOUNT"], "PARTITION": e["HTT_SLURM_PARTITION"], "QOS": e["HTT_SLURM_QOS"],
+            "KL": self.cfg.kl, "ACCOUNT": e.get("HTT_SLURM_ACCOUNT", ""), "PARTITION": e.get("HTT_SLURM_PARTITION", ""), "QOS": e.get("HTT_SLURM_QOS", ""),
             "CONTAINER_MOUNTS": e["CONTAINER_MOUNTS"], "OVERCAP": 1 if self.cfg.over_cap_as_invalid else 0,
             "MAX_EVALS": self.cfg.max_evals, "EVAL_TIMEOUT": self.cfg.eval_timeout,
             "EPILOGUE": "# driven by src/pipeline.py (no job-side chain)",
@@ -635,25 +696,54 @@ class Runner:
             raise RuntimeError(f"{template}: unfilled placeholders {left}")
         return text
 
-    def round_script(self, n: int, proposer: str, bases: Optional[Path], seed_programs: Optional[Path]) -> Path:
+    def round_script_text(self, n: int, proposer: str, bases: Optional[Path], seed_programs: Optional[Path]) -> str:
         mapping = dict(self.common_mapping(), JOBNAME=f"{self.cfg.job_prefix}-{self.cfg.name}-r{n}", ROUND=n,
                        BASES=bases or "", SEED_PROGRAMS=seed_programs or "", PROPOSER_MODEL=proposer, TIME=self.cfg.round_time)
+        return self.fill("round.sbatch", mapping)
+
+    def round_script(self, n: int, proposer: str, bases: Optional[Path], seed_programs: Optional[Path]) -> Path:
         out = self.run / "gen" / f"{self.cfg.name}_round_r{n:03d}.sbatch"
-        out.write_text(self.fill("round.sbatch", mapping))
+        out.write_text(self.round_script_text(n, proposer, bases, seed_programs))
         return out
 
-    def train_script(self, n: int, replay: Path, prev_state: Optional[Path]) -> Path:
+    def train_script_text(self, n: int, replay: Path, prev_state: Optional[Path]) -> str:
         mapping = dict(self.common_mapping(), JOBNAME=f"{self.cfg.job_prefix}-{self.cfg.name}-train-r{n}", TAG=self.cfg.name,
                        ROUND=n, ROUND3=f"{n:03d}", REPLAY=replay, TRAIN_DIR=self.td(n), PREV_STATE=prev_state or "",
                        TIME=self.cfg.train_time)
+        return self.fill("train.sbatch", mapping)
+
+    def train_script(self, n: int, replay: Path, prev_state: Optional[Path]) -> Path:
         out = self.run / "gen" / f"{self.cfg.name}_train_r{n:03d}.sbatch"
-        out.write_text(self.fill("train.sbatch", mapping))
+        out.write_text(self.train_script_text(n, replay, prev_state))
         return out
+
+    def preflight_submission(self) -> None:
+        """``sbatch --test-only`` on the round-1 script (and the training script when the loop trains): an unsatisfiable
+        layout, account, partition or QOS is reported now, not after round 1 ran for an hour (NODECAP-001)."""
+        probes = [("round", self.round_script_text(1, self.env["SAH_MODEL_PATH"], None, None))]
+        if self.cfg.max_round > 1:
+            probes.append(("train", self.train_script_text(1, self.td(1) / "replay.jsonl", None)))
+        for kind, text in probes:
+            path = self.run / "gen" / f"_preflight_{kind}.sbatch"
+            path.write_text(text)
+            try:
+                out = self._slurm_run(["sbatch", "--test-only", str(path)])
+            except SlurmUnavailable as e:
+                self.log(f"preflight: Slurm not answering ({e}); skipping the --test-only check of the {kind} job")
+                return
+            finally:
+                if path.exists():
+                    path.unlink()
+            if out.returncode != 0:
+                text_out = (out.stderr.strip() or out.stdout.strip() or "sbatch --test-only failed").splitlines()[-1][:300]
+                raise SystemExit(f"Slurm rejects the {kind} job as configured: {text_out}\n  adjust round_gpus/train_gpus, round_cpus/round_mem, "
+                                 f"train_cpus/train_mem (pipeline config) or HTT_SLURM_ACCOUNT/PARTITION/QOS (config/local.env)")
+        self.log("preflight: sbatch --test-only accepts the round" + (" and training" if len(probes) > 1 else "") + " job script")
 
     # ---- baseline job (seed-program swap) ---------------------------------------------------------------------------------
     def baseline_script(self) -> Path:
         g = self.cfg.vllm_tp + self.cfg.eval_gpus
-        cpus, mem = {1: (12, "100G"), 2: (24, "200G"), 4: (48, "300G")}.get(g, (12 * g, f"{75 * g}G"))
+        cpus, mem = self.job_resources(g)
         mapping = dict(self.common_mapping(), JOBNAME=f"{self.cfg.job_prefix}-{self.cfg.name}-baseline", GPUS=g, CPUS=cpus,
                        MEM=mem, TIME=self.cfg.baseline_time, SEED_PROGRAMS=self.seed_file or "", BASELINE_OUT=self.baseline_json,
                        BASELINE_SEEDS=self.cfg.baseline_seeds)
@@ -780,7 +870,8 @@ class Runner:
             return "propose", f"H1 proposing: {cands}/{self.cfg.k} candidates materialised"
         probes = sum(1 for f in phases.glob("protocol-*/validation.json") if f.stat().st_mtime >= since) if phases.is_dir() else 0
         if probes:
-            return "warmup", f"{probes}/{self.cfg.round_gpus} replicas passed the protocol probe"
+            replicas = max(1, (self.cfg.round_gpus - self.cfg.eval_gpus) // max(1, self.cfg.vllm_tp))
+            return "warmup", f"{probes}/{replicas} replicas passed the protocol probe"
         if (rd / "PORT_BASE").is_file():
             return "vllm", f"vLLM replicas starting (port base {(rd / 'PORT_BASE').read_text().strip()})"
         return "starting", "job started, no round files yet"
@@ -820,6 +911,7 @@ class Runner:
         t0 = time.time()
         last_key, last_print = None, 0.0
         misses, blind, gone_blind = 0, 0, 0
+        unknown_since: Optional[float] = None
         while True:
             try:
                 info = self.squeue_job(jid)
@@ -863,6 +955,18 @@ class Runner:
                 blind = 0
             if info is None:
                 misses += 1
+                if final == "UNKNOWN":
+                    # sacct answers but has no record of the job (no job accounting on this cluster, or the record is not
+                    # visible): complete artefacts prove the job finished; otherwise wait a bounded time, not hours
+                    if self.artefacts_complete(kind, n):
+                        self.log(f"{kind} {n}: job {jid} left the queue and its artefacts are complete; the accounting database "
+                                 f"has no record of it - treating it as COMPLETED after {fmt_hms(time.time() - t0)}")
+                        return "COMPLETED"
+                    unknown_since = unknown_since or time.time()
+                    if time.time() - unknown_since >= _UNKNOWN_WAIT_SECONDS:
+                        self.log(f"{kind} {n}: job {jid} not queued for {fmt_hms(time.time() - unknown_since)}, no accounting record "
+                                 f"and no artefacts; ending the wait (UNKNOWN)")
+                        return "UNKNOWN"
                 # an sacct that works but has no record (UNKNOWN) gets far longer than a contradictory RUNNING answer
                 cap = 240 if final == "UNKNOWN" else 30
                 if final.split()[0].split("+")[0] in TERMINAL or final.startswith("CANCELLED") or misses >= cap:
@@ -1025,6 +1129,7 @@ class Runner:
                      "adapter_path": (prev or {}).get("adapter_path"), "weights_updated": False,
                      "skip_reason": f"insufficient_rows_{rows}", "published_at": now()}
             (td / "model_state.json").write_text(json.dumps(state, indent=2) + "\n")
+            (td / "TRAIN_COMPLETE").write_text(f"completed_utc={now()}\nupdated=false\nreason={state['skip_reason']}\n")
             self.rounds_info.setdefault(n, {"round": n}).update(trained=True, weights_updated=False,
                                                                  skip_reason=state["skip_reason"], model_path=state["model_path"])
             self.log(f"round {n}: only {rows} trainable rows -> training skipped, proposer unchanged")
@@ -1219,9 +1324,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="write the next sbatch script without submitting")
     ap.add_argument("--quiet", action="store_true", help="log to <run>/pipeline.log only")
     for key in ("campaign", "name", "task", "adv", "run_root", "sah_root", "slurm_bin", "brief_dir", "lr", "kl", "round_time", "train_time",
-                "train_mem", "model_path", "served_model", "seed_programs_file", "baseline_json"):
+                "train_mem", "round_mem", "model_path", "served_model", "seed_programs_file", "baseline_json"):
         ap.add_argument(f"--{key.replace('_', '-')}", dest=key)
-    for key in ("k", "round_gpus", "train_gpus", "train_cpus", "max_round", "h1_seed", "max_evals", "eval_timeout", "token_budget",
+    for key in ("k", "round_gpus", "train_gpus", "train_cpus", "round_cpus", "max_round", "h1_seed", "max_evals", "eval_timeout", "token_budget",
                 "max_round_retries", "max_train_retries", "gpu_cap", "max_jobs", "eval_gpus", "vllm_tp", "max_model_len"):
         ap.add_argument(f"--{key.replace('_', '-')}", dest=key, type=int)
     for key in ("poll_seconds", "heartbeat_minutes"):

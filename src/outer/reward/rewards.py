@@ -39,6 +39,20 @@ def task_reward(score: Optional[float], base_score: float) -> float:
     return max(CLIP_LOW, min(CLIP_HIGH, r))
 
 
+def rollout_score_is_terminal(rollout_dir: Path, task_id: str) -> bool:
+    """True when the candidate's run_baseline wrote a terminal summary row for ``task_id`` (the score is final); False when
+    only a wall-safe checkpoint exists (interrupted rollout: usable as a reward, never as the round's best/improvement)."""
+    for summ in rollout_dir.glob("*/summary.json"):
+        try:
+            payload = json.loads(summ.read_text())
+            rows = payload if isinstance(payload, list) else [payload]
+            if any(isinstance(row, dict) and row.get("task_id") == task_id for row in rows):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def load_rollout_score(rollout_dir: Path, task_id: str) -> Optional[float]:
     """Best score for ``task_id`` from a candidate's run_baseline output
     (final summary authoritative; wall-safe checkpoint only if no terminal task
@@ -260,7 +274,8 @@ def compute_task_group(
         else:
             score = load_rollout_score(rollout_root / task_id / f"cand{k:02d}", task_id)
             reward = task_reward(score, base_score)
-        rows.append({"k": k, "valid": bool(cand.get("valid")), "score": score,
+        terminal = cand.get("valid") and rollout_score_is_terminal(rollout_root / task_id / f"cand{k:02d}", task_id)
+        rows.append({"k": k, "valid": bool(cand.get("valid")), "score": score, "terminal": bool(terminal),
                      "reward": reward, "spec_hash": cand.get("spec_hash", ""),
                      "changed_fields": cand.get("changed_fields", []),
                      "review_log": cand.get("review_log", [])})
@@ -271,7 +286,7 @@ def compute_task_group(
     for r in rows:
         r["advantage"] = (r["reward"] - mean) / (std + EPS)
 
-    valid = [r for r in rows if r["valid"] and r["score"] is not None]
+    valid = [r for r in rows if r["valid"] and r["score"] is not None and r.get("terminal", True)]
     best = max(valid, key=lambda r: r["score"]) if valid else None
     return {"task_id": task_id, "base_score": base_score,
             "reward_mean": mean, "reward_std": std, "rows": rows,
@@ -347,6 +362,7 @@ def compute_task_group_v2(
                 reward = INVALID_REWARD
         rows.append({"k": k, "valid": bool(cand.get("valid")),
                      "repaired": repaired, "score": score,
+                     "terminal": bool(cand.get("valid") and rollout_score_is_terminal(rollout_root / task_id / f"cand{k:02d}", task_id)),
                      "reward": reward, "spec_hash": cand.get("spec_hash", ""),
                      "changed_fields": cand.get("changed_fields", []),
                      "review_log": cand.get("review_log", [])})
@@ -382,7 +398,7 @@ def compute_task_group_v2(
 
     mean = sum(rewards) / len(rewards)
     std = math.sqrt(sum((x - mean) ** 2 for x in rewards) / len(rewards))
-    valid = [r for r in rows if r["valid"] and r["score"] is not None]
+    valid = [r for r in rows if r["valid"] and r["score"] is not None and r.get("terminal", True)]
     best = max(valid, key=lambda r: r["score"]) if valid else None
     return {"task_id": task_id, "base_score": base_score, "ceiling": ceiling,
             "reward_mean": mean, "reward_std": std, "rows": rows,
@@ -899,13 +915,14 @@ def compute_task_group_anchored(
         score = (load_rollout_score(rollout_root / task_id / f"cand{k:02d}", task_id)
                  if valid else None)
         rows.append({"k": k, "valid": valid, "score": score,
+                     "terminal": bool(valid and rollout_score_is_terminal(rollout_root / task_id / f"cand{k:02d}", task_id)),
                      "spec_hash": cand.get("spec_hash", ""),
                      "changed_fields": cand.get("changed_fields", []),
                      "review_log": cand.get("review_log", [])})
 
     denom = (ceiling - base_score) if (ceiling is not None and ceiling > base_score + EPS) \
         else (abs(base_score) + EPS)
-    valid_scores = [r["score"] for r in rows if r["valid"] and r["score"] is not None]
+    valid_scores = [r["score"] for r in rows if r["valid"] and r["score"] is not None and r.get("terminal", True)]
     ranked = sorted(valid_scores)
     raw: List[float] = []
     for r in rows:
@@ -931,7 +948,7 @@ def compute_task_group_anchored(
     for r, adv in zip(rows, _rms_normalize(raw)):
         r["advantage"] = adv
 
-    valid = [r for r in rows if r["valid"] and r["score"] is not None]
+    valid = [r for r in rows if r["valid"] and r["score"] is not None and r.get("terminal", True)]
     best = max(valid, key=lambda r: r["score"]) if valid else None
     return {"task_id": task_id, "base_score": base_score, "ceiling": ceiling,
             "reward_mean": sum(r["reward"] for r in rows) / len(rows),

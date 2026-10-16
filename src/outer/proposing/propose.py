@@ -652,6 +652,7 @@ def run_once(k: int, *, base_spec: Dict[str, Any], user_message: str,
                 }],
                 infrastructure_failure=True,
                 training_block_reason="workspace_initialization_error",
+                exact_user_message=primary_message,
             )
         # NOTHING is pre-written into the draft. Earlier revisions seeded a
         # mounted starter tool (BAILOUT-005 / SCAFFOLD-001) so a slot under a

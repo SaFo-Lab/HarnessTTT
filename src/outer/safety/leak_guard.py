@@ -85,7 +85,7 @@ def strip_leak_markers(text: str) -> List[str]:
     redact/drop rather than ship flagged text — matches the deterministic
     fail-closed policy."""
     low = (text or "").lower()
-    return [m for m in _LEAK_MARKERS if m in low]
+    return [m for m in _LEAK_MARKERS if re.search(r"(?<![a-z0-9])" + re.escape(m) + r"(?![a-z0-9])", low)]
 
 
 def sanitize(text: str, *, neutralize: bool = True) -> str:

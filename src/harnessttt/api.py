@@ -19,12 +19,15 @@ import os
 import re
 import subprocess
 import sys
+import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 from urllib.parse import urlsplit
 
 import inner
+from inner.tasks.aliases import DISPLAY, TASK_IDS, fmt_metric
 
 DEFAULT_ROUNDS = 15
 INITIAL_HARNESS = Path(inner.__file__).resolve().parent / "harness"   # the initial executor harness (agent.yaml, system.md, skills/, tools/, middleware/)
@@ -77,6 +80,18 @@ def _unwrap_exit(exc: BaseException) -> RuntimeError:
     return RuntimeError(str(code) if isinstance(code, str) else f"pipeline stopped with exit code {code}")
 
 
+def _site_env() -> Dict[str, str]:
+    """config/env.sh + config/local.env as a dict (empty when there is no checkout or sourcing fails)."""
+    if ROOT is None or not (ROOT / "config" / "env.sh").is_file():
+        return {}
+    try:
+        return _pipeline().load_env(ROOT)
+    except SystemExit:
+        return {}
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError("config/env.sh + config/local.env failed to source: " + (exc.stderr or b"").decode(errors="replace")[-400:]) from None
+
+
 # ----------------------------------------------------------------------------------------------------------------------
 # tasks
 # ----------------------------------------------------------------------------------------------------------------------
@@ -101,13 +116,14 @@ class Task:
 
     def native_metric(self, combined_score: float) -> float:
         """Map the evaluator's combined score to the metric the paper reports (sum of radii, µs, ...)."""
-        p = _pipeline()
-        kind, c, _unit = p.DISPLAY.get(self.id, ("mul", 1.0, "score"))
-        return p.fmt_metric(kind, c, combined_score)
+        kind, c, _unit = DISPLAY.get(self.id, ("mul", 1.0, "score"))
+        return fmt_metric(kind, c, combined_score)
 
     def evaluate(self, program: str, *, timeout_s: Optional[float] = None, python_exe: str = sys.executable):
         """Score ``program`` with the task's evaluator in a subprocess (same path as an executor rollout).
         Returns ``inner.evaluation.eval_runner.EvalOutcome`` (``combined_score``, ``validity``, ``error``, ``wall_s``)."""
+        if self._eft is None:
+            raise ValueError("Task.evaluate needs a registry task: build it with load_task() / examples.<task>.init_task()")
         from inner.evaluation.eval_runner import evaluate_program
         return evaluate_program(self._eft, program, timeout_s=timeout_s, python_exe=python_exe)
 
@@ -117,9 +133,8 @@ def load_task(name: str) -> Task:
 
     Raises ``ValueError`` for an unknown task, with a hint when the dataset snapshot itself is missing
     (``python3 scripts/setup/setup_dataset.py`` builds it)."""
-    p = _pipeline()
     from inner.tasks import eft_task
-    task_id = p.TASK_IDS.get(name, name)
+    task_id = TASK_IDS.get(name, name)
     manifest = eft_task.DATASET_ROOT / "MANIFEST_eft.json"
     if not manifest.is_file():
         raise ValueError(f"task snapshot not found: {manifest} (build it with `python3 scripts/setup/setup_dataset.py` or set "
@@ -127,9 +142,9 @@ def load_task(name: str) -> Task:
     try:
         t = eft_task.get_task(task_id)
     except KeyError:
-        known = sorted({*p.TASK_IDS, *(x.task_id for x in eft_task.load_tasks())})
+        known = sorted({*TASK_IDS, *(x.task_id for x in eft_task.load_tasks())})
         raise ValueError(f"unknown task {name!r}; known aliases and ids: {known}") from None
-    _kind, _c, unit = p.DISPLAY.get(task_id, ("mul", 1.0, "combined_score"))
+    _kind, _c, unit = DISPLAY.get(task_id, ("mul", 1.0, "combined_score"))
     return Task(id=t.task_id, description=t.spec, initial_program_path=Path(t.initial_program_path),
                 evaluator_path=Path(t.evaluator_path), task_dir=Path(t.task_dir), domain=t.domain,
                 per_eval_timeout_s=float(t.per_eval_timeout_s), metric=unit, _eft=t)
@@ -183,10 +198,9 @@ def _result(runner, task_id: str, dry_run_script: Optional[Path] = None) -> Resu
             if ent.get("package"):
                 pkg = Path(ent["package"])
                 break
-    p = _pipeline()
-    kind, c, _unit = p.DISPLAY.get(task_id, ("mul", 1.0, "score"))
+    kind, c, _unit = DISPLAY.get(task_id, ("mul", 1.0, "score"))
     return Result(run_dir=run, task_id=task_id, rounds_completed=n, done=bool(progress.get("done")),
-                  best_score=best_score, best_metric=(p.fmt_metric(kind, c, best_score) if best_score else None),
+                  best_score=best_score, best_metric=(fmt_metric(kind, c, best_score) if best_score is not None else None),
                   best_harness_path=pkg, best_program=best_program, best_programs_json=reg,
                   progress_json=run / "progress.json", dry_run_script=dry_run_script)
 
@@ -229,7 +243,7 @@ def optimize(task: Union[Task, str], *, seed_harness: Union[str, Path] = INITIAL
         raise ValueError("the pipeline serves the proposer and the frozen executor from one base checkpoint (model_path); "
                          "pass the same path for executor_lm and proposer_lm (the LoRA is applied to the proposer only)")
     model_path = executor_lm or proposer_lm
-    alias = next((a for a, tid in p.TASK_IDS.items() if tid == t.id), t.id)
+    alias = next((a for a, tid in TASK_IDS.items() if tid == t.id), t.id)
     data: Dict[str, Any] = dict(campaign=campaign, name=name or f"{alias}_harnessttt", task=alias,
                                 k=int(proposals_per_round), max_round=int(rounds), max_evals=int(max_metric_calls))
     if model_path:
@@ -247,6 +261,8 @@ def optimize(task: Union[Task, str], *, seed_harness: Union[str, Path] = INITIAL
         runner.run_loop()
     except SystemExit as exc:
         raise _unwrap_exit(exc) from None
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError("config/env.sh + config/local.env failed to source: " + (exc.stderr or b"").decode(errors="replace")[-400:]) from None
     return _result(runner, t.id)
 
 
@@ -263,18 +279,21 @@ def _looks_like_vllm(base_url: str) -> bool:
 
 
 def run_harness_argv(harness_dir: Union[str, Path, None], task: Union[Task, str], *, base_url: str, model: str,
-                     api_key: str = "EMPTY", max_evals: int = 20, out_dir: Union[str, Path] = "runs/transfer",
+                     api_key: Optional[str] = None, max_evals: int = 20, out_dir: Union[str, Path] = "runs/transfer",
                      eval_python: str = sys.executable, seed_programs_file: Union[str, Path, None] = None,
-                     vllm_extras: Optional[bool] = None, extra_args: Sequence[str] = ()) -> List[str]:
+                     vllm_extras: Optional[bool] = None, python: Optional[str] = None,
+                     extra_args: Sequence[str] = ()) -> List[str]:
     """The ``python -m inner.cli.run_baseline`` command line that ``run_harness`` executes.
 
+    python: the interpreter that runs the executor runtime (``None`` = this one; ``run_harness`` resolves ``SAH_PYTHON``).
+    api_key is NOT part of the command line (it travels as ``OPENAI_API_KEY`` in the environment, see ``run_harness``).
     vllm_extras: send vLLM-only sampling fields (top_k, chat_template_kwargs).  ``None`` = yes for a local/vLLM endpoint,
-    no for a hosted API host (``--no-vllm-extras``)."""
+    no for a hosted API host (``--no-vllm-extras``, which also moves the token cap to ``max_completion_tokens``)."""
     t = task if isinstance(task, Task) else load_task(task)
     if vllm_extras is None:
         vllm_extras = _looks_like_vllm(base_url)
-    argv = [sys.executable, "-m", "inner.cli.run_baseline", "--ids", t.id, "--base-url", base_url, "--model", model,
-            "--api-key", api_key, "--max-evals", str(int(max_evals)), "--eval-python", eval_python,
+    argv = [python or sys.executable, "-m", "inner.cli.run_baseline", "--ids", t.id, "--base-url", base_url, "--model", model,
+            "--max-evals", str(int(max_evals)), "--eval-python", eval_python,
             "--out", str(Path(out_dir).resolve()), "--require-trajectory"]
     if harness_dir is not None:                       # None = the built-in initial harness
         argv += ["--harness-dir", str(Path(harness_dir).resolve())]
@@ -284,6 +303,29 @@ def run_harness_argv(harness_dir: Union[str, Path, None], task: Union[Task, str]
         argv.append("--no-vllm-extras")
     argv += list(extra_args)
     return argv
+
+
+def _executor_python(env: Dict[str, str], explicit: Optional[str]) -> str:
+    """The interpreter with the NexAU runtime: an explicit ``python=``, else ``SAH_PYTHON`` (process env, then
+    config/local.env), else this interpreter.  Probed with ``import nexau`` before anything is launched."""
+    candidate = explicit or env.get("SAH_PYTHON") or _site_env().get("SAH_PYTHON") or sys.executable
+    if not os.access(candidate, os.X_OK):
+        if explicit:
+            raise RuntimeError(f"python={candidate!r} is not executable")
+        candidate = sys.executable
+    probe_env = dict(env)
+    nexau = _nexau_root(env)
+    probe_env["PYTHONPATH"] = os.pathsep.join([str(SRC)] + ([nexau] if nexau else []) + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+    try:
+        probe = subprocess.run([candidate, "-c", "import nexau, inner.cli.run_baseline"], env=probe_env, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"cannot run the executor interpreter {candidate}: {exc}") from None
+    if probe.returncode != 0:
+        tail = (probe.stderr.strip().splitlines() or ["?"])[-1][:200]
+        raise RuntimeError(f"{candidate} cannot import the executor runtime ({tail}). Running a harness needs the Python 3.12 "
+                           f"environment with NexAU: run scripts/setup/setup_deps.sh and scripts/setup/setup_runtime_env.sh, then set "
+                           f"SAH_PYTHON in config/local.env or pass python=... to run_harness")
+    return candidate
 
 
 def _nexau_root(env: Dict[str, str]) -> Optional[str]:
@@ -299,33 +341,44 @@ def _nexau_root(env: Dict[str, str]) -> Optional[str]:
 
 def run_harness(harness_dir: Union[str, Path, None], task: Union[Task, str], *, base_url: str, model: str,
                 api_key: str = "EMPTY", max_evals: int = 20, out_dir: Union[str, Path] = "runs/transfer",
-                eval_python: str = sys.executable, seed_programs_file: Union[str, Path, None] = None,
-                vllm_extras: Optional[bool] = None, extra_args: Sequence[str] = (),
+                eval_python: Optional[str] = None, seed_programs_file: Union[str, Path, None] = None,
+                vllm_extras: Optional[bool] = None, python: Optional[str] = None, extra_args: Sequence[str] = (),
                 env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Run ``harness_dir`` (a package with ``agent.yaml``; ``None`` = the initial harness) on ``task`` with the executor
     served at ``base_url`` (vLLM or any OpenAI-compatible API) and return the run's summary row.
 
-    The executor runtime needs the pinned NexAU checkout importable (Python 3.12): ``NEXAU_ROOT`` from the environment or
-    ``config/local.env`` (``scripts/setup/setup_deps.sh``), or already on ``PYTHONPATH``.  ``eval_python`` is the interpreter
-    that runs the task's evaluator (numpy/scipy ... for the math tasks).  ``out_dir`` is resolved against the current
-    directory; the run writes ``<out_dir>/<timestamp>/{summary.json, summary.csv, results/<task>.json, provenance.json}``.
+    The executor runtime is the pinned NexAU checkout under Python 3.12: ``python`` (default ``SAH_PYTHON`` from the
+    environment or ``config/local.env``, built by ``scripts/setup/setup_runtime_env.sh``) must import it, and ``NEXAU_ROOT``
+    is put on its ``PYTHONPATH`` when the checkout is not installed.  ``eval_python`` runs the task's evaluator (default:
+    the same interpreter).  ``api_key`` is passed through the environment (``OPENAI_API_KEY``), never on the command line.
+    ``out_dir`` is resolved against the current directory; each call writes into its own
+    ``<out_dir>/<stamp>/<timestamp>/{summary.json, summary.csv, results/<task>.json, provenance.json}``.
+
+    Raises ``RuntimeError`` with the executor's own error text (from ``summary.json``) when the run fails.
     """
-    out_dir = Path(out_dir).resolve()
-    argv = run_harness_argv(harness_dir, task, base_url=base_url, model=model, api_key=api_key, max_evals=max_evals,
-                            out_dir=out_dir, eval_python=eval_python, seed_programs_file=seed_programs_file,
-                            vllm_extras=vllm_extras, extra_args=extra_args)
+    out_root = Path(out_dir).resolve()
     run_env = dict(os.environ)
     if env:
         run_env.update(env)
+    executor = _executor_python(run_env, python)
+    stamp = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    out_run = out_root / stamp
+    argv = run_harness_argv(harness_dir, task, base_url=base_url, model=model, max_evals=max_evals, out_dir=out_run,
+                            eval_python=eval_python or executor, seed_programs_file=seed_programs_file,
+                            vllm_extras=vllm_extras, python=executor, extra_args=extra_args)
     nexau = _nexau_root(run_env)
     paths = [str(SRC)] + ([nexau] if nexau else []) + ([run_env["PYTHONPATH"]] if run_env.get("PYTHONPATH") else [])
     run_env["PYTHONPATH"] = os.pathsep.join(paths)
-    before = {d.name for d in out_dir.glob("*")} if out_dir.is_dir() else set()
-    subprocess.run(argv, check=True, env=run_env, cwd=str(ROOT) if ROOT else None)
-    new = sorted(d for d in out_dir.glob("*") if d.is_dir() and d.name not in before)
-    if not new:
-        raise RuntimeError(f"run_baseline left no output under {out_dir}")
-    rows = json.loads((new[-1] / "summary.json").read_text())
+    run_env["OPENAI_API_KEY"] = api_key
+    proc = subprocess.run(argv, env=run_env, cwd=str(ROOT) if ROOT else None, capture_output=True, text=True)
+    summaries = sorted(out_run.glob("*/summary.json")) if out_run.is_dir() else []
+    if not summaries:
+        tail = (proc.stderr.strip() or proc.stdout.strip()).splitlines()[-5:]
+        raise RuntimeError(f"run_baseline exited with {proc.returncode} and left no summary under {out_run}:\n" + "\n".join(tail))
+    rows = json.loads(summaries[-1].read_text())
     row = rows[0] if rows else {}
-    row["out_dir"] = str(new[-1])
+    row["out_dir"] = str(summaries[-1].parent)
+    if proc.returncode != 0 or row.get("mode") == "error" or row.get("error"):
+        raise RuntimeError(f"run_baseline failed for {row.get('task_id', task)}: {row.get('error') or 'exit ' + str(proc.returncode)} "
+                           f"(details: {row['out_dir']})")
     return row

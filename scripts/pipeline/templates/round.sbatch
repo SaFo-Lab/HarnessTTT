@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # HarnessTTT: one SAH outer round with a (possibly trained) proposer: propose on SAH9B_PROPOSER_MODEL, rollouts on the frozen base.
 #SBATCH --job-name=@@JOBNAME@@
-#SBATCH --account=@@ACCOUNT@@
-#SBATCH --partition=@@PARTITION@@
-#SBATCH --qos=@@QOS@@
+@@SBATCH_ACCOUNT@@
+@@SBATCH_PARTITION@@
+@@SBATCH_QOS@@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:@@GPUS@@
@@ -15,6 +15,7 @@
 #SBATCH --output=@@RUN@@/out/slurm-%j.out
 #SBATCH --error=@@RUN@@/out/slurm-%j.err
 set -euo pipefail
+export RUN_ROOT=@@RUN_ROOT@@   # the runner's run root, not the frozen worktree's default
 source @@ENV_FILE@@
 # per-lineage base model (pipeline.py config: model_path / served_model / vllm_tp / max_model_len; defaults = env.sh)
 export SAH_MODEL_PATH=@@MODEL_PATH@@ SAH_SERVED_MODEL=@@SERVED_MODEL@@ SAH9B_VLLM_TP=@@VLLM_TP@@ SAH9B_MAX_MODEL_LEN=@@MAX_MODEL_LEN@@ SAH9B_BASE_MODEL=@@MODEL_PATH@@   # SAH9B_BASE_MODEL: the workers refuse to run if a sourced site file changes SAH_MODEL_PATH
@@ -36,9 +37,12 @@ export SAH9B_PROPOSE_PAR=@@K@@ SAH9B_ROLLOUT_PAR=@@K@@ SAH9B_ADV=@@ADV@@ SAH9B_F
 # seed-program swap: per-lineage baseline table (empty = repo config/baseline_h2_20ev.json); GPUs reserved for the evaluator
 export SAH_BASELINE_JSON="@@BASELINE_JSON@@" SAH9B_EVAL_GPUS=@@EVAL_GPUS@@
 [ -n "$SAH_BASELINE_JSON" ] || unset SAH_BASELINE_JSON
-test -r "$SAH_IMAGE"; test -x "$VLLM_ENV/bin/vllm"; test -x "$SAH_AHC_NATIVE_BIN/docker"
-git -C "$SAH9B_SAH_ROOT" diff --quiet --no-ext-diff HEAD --
-test -z "$(git -C "$SAH9B_SAH_ROOT" ls-files --others --exclude-standard)"
+need(){ [ -e "$1" ] || { echo "[sbatch] missing: $2 ($1)" >&2; exit 64; }; }
+clean_tree(){ git -C "$1" diff --quiet --no-ext-diff HEAD -- || { echo "[sbatch] $1 has uncommitted changes" >&2; exit 64; }
+  [ -z "$(git -C "$1" ls-files --others --exclude-standard)" ] || { echo "[sbatch] $1 has untracked files" >&2; exit 64; }; }
+need "$SAH_IMAGE" "container image SAH_IMAGE"; need "$VLLM_ENV/bin/vllm" "vLLM entry point VLLM_ENV/bin/vllm"
+case "$SAH9B_TASKS" in *ahc*) need "$SAH_AHC_NATIVE_BIN/docker" "AHC docker shim SAH_AHC_NATIVE_BIN/docker";; esac
+clean_tree "$SAH9B_SAH_ROOT"
 srun --nodes=1 --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" \
   --container-image="$SAH_IMAGE" \
   --container-mounts="@@CONTAINER_MOUNTS@@" \

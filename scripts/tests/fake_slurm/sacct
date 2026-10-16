@@ -6,6 +6,8 @@ from pathlib import Path
 if (Path(os.environ["FAKE_SLURM_DIR"]) / "DOWN").exists() or (Path(os.environ["FAKE_SLURM_DIR"]) / "DOWN_DB").exists():
     # simulated controller outage (DOWN) or accounting-DB-only outage (DOWN_DB) for the OUTAGE-001 tests
     print('sacct: error: Problem talking to the database: Connection timed out', file=sys.stderr); sys.exit(1)
+if os.environ.get("FAKE_NO_ACCOUNTING"):   # a cluster without job accounting: sacct answers, but with nothing
+    sys.exit(0)
 args = sys.argv[1:]
 jid = args[args.index("-j") + 1] if "-j" in args else None
 p = Path(os.environ["FAKE_SLURM_DIR"]) / f"{jid}.json"

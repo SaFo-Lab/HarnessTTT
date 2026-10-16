@@ -85,12 +85,12 @@ class ReplayContractTest(unittest.TestCase):
     def test_slurm_templates_take_qos_from_env(self):
         for name in ("round.sbatch", "train.sbatch"):
             text = (PIPELINE / "templates" / name).read_text()
-            self.assertIn("#SBATCH --qos=@@QOS@@", text)
-            self.assertIn("#SBATCH --account=@@ACCOUNT@@", text)
+            self.assertIn("@@SBATCH_QOS@@", text)          # expands to "#SBATCH --qos=<HTT_SLURM_QOS>" or to a comment when unset
+            self.assertIn("@@SBATCH_ACCOUNT@@", text)
             self.assertNotIn("Weave_v2", text)
             self.assertNotRegex(text, r"--qos=(normal|short|high|interactive)")
         # no site-specific account / partition / QOS is baked into the tree: env.sh only passes through what
-        # config/local.env sets, and scripts/setup/preflight.sh enforces the low-priority QOS at submission time
+        # config/local.env sets; preflight.sh and the runner enforce a *_low QOS only under HARNESSTTT_REQUIRE_LOW_QOS=1
         env = (ROOT / "config/env.sh").read_text()
         self.assertRegex(env, r'HTT_SLURM_QOS="\$\{HTT_SLURM_QOS:-\}"')
         self.assertRegex(env, r'HTT_SLURM_ACCOUNT="\$\{HTT_SLURM_ACCOUNT:-\}"')

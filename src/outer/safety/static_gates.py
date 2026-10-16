@@ -9,6 +9,11 @@ The contract for generated code:
   * imports only from IMPORT_WHITELIST
   * never touches filesystem/process/network primitives directly — all side
     effects go through the ``ctx`` capability object (see inner/harness_sdk.py)
+
+The gate is a denylist over the AST and cannot see types: ``dataclasses.sys`` is an attribute chain, not an import.
+The executor therefore also runs generated tools with a restricted ``__builtins__`` (whitelisted imports only, no
+``open``/``exec``/reflection) and hands modules in through a guard that refuses private attributes, the attribute
+names below and any module outside the whitelist (``inner.harness.tools.custom_runtime``).
 """
 from __future__ import annotations
 
@@ -16,40 +21,11 @@ import ast
 import re
 from typing import List, Tuple
 
-IMPORT_WHITELIST = {
-    "math", "re", "json", "itertools", "functools", "collections", "heapq",
-    "bisect", "random", "statistics", "string", "typing", "dataclasses",
-    "numpy", "pandas",
-    # 2026-09-21: numerical optimisation + wall-clock budgeting for generated
-    # tools. scipy is pure numerics (its I/O entry points are still blocked by
-    # FORBIDDEN_ATTRIBUTES); `time` has no I/O surface. Without them a tool
-    # cannot run an LP/SLSQP search or time-box itself, which forced the
-    # proposer into weak numpy-only heuristics (cp26_b r17).
-    "scipy", "time",
-}
-FORBIDDEN_NAMES = {
-    "open", "exec", "eval", "compile", "__import__", "input", "breakpoint",
-    "globals", "locals", "vars", "memoryview", "exit", "quit",
-    "getattr", "setattr", "delattr", "type", "object", "super",
-    # hasattr was removed from this set after a real generated tool was
-    # rejected for using it: it is read-only reflection, returns a bool,
-    # and cannot smuggle attribute access the way getattr can.
-}
-FORBIDDEN_MODULES = {
-    "os", "sys", "subprocess", "socket", "shutil", "pathlib", "importlib",
-    "ctypes", "multiprocessing", "threading", "signal", "resource", "pickle",
-    "requests", "urllib", "http", "ftplib", "telnetlib", "builtins", "io",
-}
-MAX_CODE_CHARS = 10000
-FORBIDDEN_ATTRIBUTES = {
-    # File/network-capable entry points reachable from otherwise useful
-    # numerical/data libraries.
-    "load", "save", "savez", "savez_compressed", "fromfile",
-    "tofile", "memmap", "read_csv", "read_json", "read_pickle",
-    "read_parquet", "read_excel", "read_feather", "read_hdf", "read_sql",
-    "to_csv", "to_json", "to_pickle", "to_parquet", "to_excel",
-    "to_feather", "to_hdf", "to_sql", "to_clipboard",
-}
+# the policy is shared with the executor runtime, which executes generated tools in a namespace restricted to it
+# (inner.harness.tools.custom_runtime): what the gate forbids statically is also unavailable at run time
+from inner.harness.tools.code_policy import (  # noqa: E402
+    FORBIDDEN_ATTRIBUTES, FORBIDDEN_MODULES, FORBIDDEN_NAMES, IMPORT_WHITELIST, MAX_CODE_CHARS,
+)
 
 MIDDLEWARE_LAST_STEP_KINDS = {
     "seed", "diff", "full_rewrite", "edit_eval", "probe",
@@ -588,6 +564,8 @@ def check_middleware_code(code: str, hook: str) -> Tuple[bool, List[str]]:
         return False
 
     state_aliases = set()
+    if "--USER-HOOK-START--" in code or "--USER-HOOK-END--" in code:
+        errors.append("the wrapper sentinels '# --USER-HOOK-START--' / '# --USER-HOOK-END--' may not appear in a hook")
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             value = node.value

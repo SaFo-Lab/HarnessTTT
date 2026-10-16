@@ -104,14 +104,16 @@ class RunHarnessArgvTest(unittest.TestCase):
         task = harnessttt.Task(id="eft__math__circle_packing", description="d", initial_program_path=Path("p.py"),
                                evaluator_path=Path("e.py"), task_dir=Path("."), domain="x")
         argv = harnessttt.run_harness_argv("/pkg", task, base_url="https://api.openai.com/v1", model="gpt-5.5",
-                                           api_key="k", max_evals=20, out_dir="runs/transfer", eval_python="/usr/bin/python3")
+                                           max_evals=20, out_dir="runs/transfer", eval_python="/usr/bin/python3")
         self.assertEqual(argv[:3], [sys.executable, "-m", "inner.cli.run_baseline"])
         for flag, value in (("--ids", "eft__math__circle_packing"), ("--base-url", "https://api.openai.com/v1"), ("--model", "gpt-5.5"),
-                            ("--api-key", "k"), ("--max-evals", "20"), ("--eval-python", "/usr/bin/python3"), ("--out", str(Path("runs/transfer").resolve())),
+                            ("--max-evals", "20"), ("--eval-python", "/usr/bin/python3"), ("--out", str(Path("runs/transfer").resolve())),
                             ("--harness-dir", str(Path("/pkg").resolve()))):
             self.assertIn(flag, argv)
             self.assertEqual(argv[argv.index(flag) + 1], value, flag)
         self.assertIn("--require-trajectory", argv)
+        self.assertNotIn("--api-key", argv, "the key travels as OPENAI_API_KEY, never on the command line")
+        self.assertEqual(harnessttt.run_harness_argv(None, task, base_url="u", model="m", python="/opt/py312/bin/python")[0], "/opt/py312/bin/python")
         self.assertNotIn("--harness-dir", harnessttt.run_harness_argv(None, task, base_url="http://localhost:8800/v1", model="m"))
 
     def test_hosted_apis_get_no_vllm_only_fields_and_local_vllm_keeps_them(self):
@@ -123,6 +125,21 @@ class RunHarnessArgvTest(unittest.TestCase):
         self.assertNotIn("--no-vllm-extras", local)
         self.assertNotIn("--no-vllm-extras", harnessttt.run_harness_argv(None, task, base_url="https://api.openai.com/v1", model="m", vllm_extras=True))
         self.assertTrue(Path(hosted[hosted.index("--out") + 1]).is_absolute())
+
+
+class ExecutorPythonTest(unittest.TestCase):
+    def test_interpreter_without_the_runtime_is_refused_with_a_hint(self):
+        from harnessttt.api import _executor_python
+        with self.assertRaises(RuntimeError) as ctx:
+            _executor_python({"PYTHONPATH": ""}, "/bin/sh")        # executable, but no NexAU runtime behind it
+        self.assertIn("setup_runtime_env.sh", str(ctx.exception))
+        with self.assertRaises(RuntimeError):
+            _executor_python({}, "/nonexistent/python")
+
+    def test_hand_built_task_cannot_be_evaluated(self):
+        task = harnessttt.Task(id="t", description="d", initial_program_path=Path("p.py"), evaluator_path=Path("e.py"), task_dir=Path("."), domain="x")
+        with self.assertRaises(ValueError):
+            task.evaluate("x = 1")
 
 
 class ServedNameTest(unittest.TestCase):

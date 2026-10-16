@@ -14,6 +14,7 @@ tol = 0.02; out = {}
 for tid, nb in nbs.items():
     if nb.get("beam"):
         out[tid] = nb; print(f"{tag} r{N}: collector beam reused ({len(nb['beam'])} parents)"); continue
+    if tid not in groups: out[tid] = nb; print(f"{tag} r{N}: {tid} carried forward without rows (no beam)"); continue
     head = {"package": nb["package"], "score": float(nb["score"]), "from": "incumbent"}; pool = []
     for row in groups[tid]["rows"]:
         if row.get("score") is None or not row.get("valid", True): continue
@@ -54,9 +55,14 @@ def _eval_time_of(ent):
     except Exception:
         return None
 _LIMITS = {"eft__math__hadamard_maximal_det": 350.0}
-def too_slow(ent, frac=0.8):
+try:   # the same per-task limits the strict ratchet applies (templates export SAH_RATCHET_EVAL_LIMITS)
+    _LIMITS.update({k: float(v) for k, v in json.loads(os.environ.get("SAH_RATCHET_EVAL_LIMITS", "{}") or "{}").items()})
+except Exception:
+    pass
+def too_slow(ent, frac=None):
     et = _eval_time_of(ent)
     if et is None: return False
+    frac = float(os.environ.get("SAH_RATCHET_EVAL_TIME_FRAC", "0.8")) if frac is None else frac
     lim = _LIMITS.get(str(ent.get("task_id", "")), float(os.environ.get("SAH9B_EVAL_TIMEOUT", "600")))
     return et > frac * lim
 # --- operator registry rollback (explicit, logged): <run_dir>/REGISTRY_ROLLBACK.json =

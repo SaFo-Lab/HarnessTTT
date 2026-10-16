@@ -27,7 +27,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 _SRC = Path(__file__).resolve().parents[2]
@@ -1672,6 +1672,8 @@ def cmd_collect(args) -> None:
     )
 
     adv_mode = os.environ.get("SAH_ADV", "v2")
+    if adv_mode not in ("v3", "v2", "grpo", "legacy", "anchored", "paired"):
+        raise ValueError(f"unknown SAH_ADV={adv_mode!r}; expected one of v3, v2, grpo, legacy, anchored, paired")
     # v3 == v2 except on no_signal groups, so results alone can't tell you which
     # impl ran — log it so collect.log is proof the env survived sbatch/srun.
     print(f"[collect] advantage impl: SAH_ADV={adv_mode} "

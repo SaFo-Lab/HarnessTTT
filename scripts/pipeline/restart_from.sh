@@ -9,7 +9,7 @@ set -euo pipefail
 L=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P); A="${SAH9B_ABL_ROOT:?set SAH9B_ABL_ROOT}"
 tag=${1:?arm}; N=${2:?round}; run=$A/$tag; stamp=$(date +%Y%m%d-%H%M%S); prefix="${SAH9B_JOB_PREFIX:-htt}"
 log(){ echo "[$(date -Is)] [$tag restart_from $N] $*" | tee -a "$run/chain.log"; }
-squeue -u "$USER" -h -o "%j" | grep -q "^${prefix}-${tag}-" && { log "a job of $tag is still running/pending: refusing"; exit 1; }
+squeue -u "${USER:-$(id -un)}" -h -o "%j" | grep -q "^${prefix}-${tag}-" && { log "a job of $tag is still running/pending: refusing"; exit 1; }
 prev=$(printf 'round%03d' $((N-1)))
 for f in "$run/rounds/$prev/best_programs_after.json" "$run/rounds/$prev/task_feedback_after.json" "$run/rounds/$prev/next_bases_beam2.json" "$run/training/$prev/model_state.json"; do test -s "$f" || { log "missing $f"; exit 2; }; done
 "${HARNESSTTT_HOST_PYTHON:-python3}" - "$run" "$N" "$stamp" "${SAH9B_LEDGER_PREFIX:-}" "${SAH9B_RESTART_REASON:-operator restart}" <<'PY'

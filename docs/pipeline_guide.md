@@ -60,7 +60,7 @@ cp config/pipelines/hadamard.yaml config/pipelines/my_run.yaml
 python3 src/pipeline.py config/pipelines/my_run.yaml                 # blocking; use tmux/nohup for long campaigns
 python3 src/pipeline.py config/pipelines/my_run.yaml status          # table: per round valid/8, best candidate, incumbent, accepted, update, durations
 python3 src/pipeline.py config/pipelines/my_run.yaml stop            # ABL_STOP: stop between jobs (a running job finishes); re-run to resume
-python3 src/pipeline.py config/pipelines/my_run.yaml --dry-run       # write the next sbatch into <run>/gen without submitting
+python3 src/pipeline.py config/pipelines/my_run.yaml --dry-run       # write the next sbatch into <run>/gen without submitting (it still freezes the tree, creates the run dir and runs the sbatch --test-only preflight)
 python3 src/pipeline.py                                              # no positional config -> config/pipeline.yaml; any key: --max-round 3 --name test
 ```
 
@@ -113,4 +113,4 @@ recorded slime command up to the intended path/module changes.  Details in the m
 
 ## Origin
 
-Code from the SAH research repository: `src/inner`, `src/outer`, `src/training` (-> `trainer`) at the 2026-09-24 state (v11 + OVERCAP-001); the pipeline from the online-training branch with the reward-ablation launcher refinements (OVERCAP handling, monitor v2, status, restart).  slime: official THUDM/slime `58ee7489`; the patch was derived from Gen-Verse/OpenClaw-RL `f48ac35` (which is that commit plus OpenClaw's modifications) and SAH's seven training patches.
+Code layout: `src/inner` (executor side), `src/outer` (proposer side), `src/trainer` (proposer update), `src/pipeline.py` (the loop); the pipeline grew out of the paper's online-training experiments (over-cap handling, monitor, status, restart tooling).

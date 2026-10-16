@@ -169,7 +169,7 @@ def _normalise_single(entry: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(entry, dict) or not entry.get("program"):
         return None
     out = {
-        "score": float(entry.get("score", float("-inf"))),
+        "score": float(entry["score"]) if entry.get("score") is not None else float("-inf"),
         "program": str(entry["program"]),
     }
     for key in ("round", "k", "result_path", "program_sha256"):

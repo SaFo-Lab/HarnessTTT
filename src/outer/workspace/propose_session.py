@@ -1011,6 +1011,13 @@ class ProposeSession:
             errors.append(
                 "implementation must contain def before_model(hook_input)"
             )
+        else:
+            extras = h2ws._module_level_extras(str(implementation), "before_model")
+            if extras:
+                errors.append(
+                    "implementation must contain only def before_model(hook_input): module-level statements are not "
+                    "carried into the mounted hook (put imports inside the function); found " + ", ".join(extras)
+                )
         if errors:
             return self._transaction_failure(
                 kind="middleware", name=str(name), intent=intent, errors=errors

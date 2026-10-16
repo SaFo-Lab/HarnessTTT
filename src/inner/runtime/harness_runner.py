@@ -44,8 +44,11 @@ class LLMEndpoint:
     enable_thinking: Optional[bool] = False  # Qwen3.5: keep outputs clean/fast; None = do not send chat_template_kwargs
     seed: Optional[int] = None
     # vLLM-only request fields (top_k, chat_template_kwargs, ...) travel in extra_body; an OpenAI-compatible API that is
-    # not vLLM rejects unknown fields, so run_baseline --no-vllm-extras sets this False and they are stripped
+    # not vLLM rejects unknown fields, so run_baseline --no-vllm-extras sets this False and they are stripped.  Hosted
+    # reasoning models also reject max_tokens (-> max_completion_tokens) and non-default temperature/top_p, which are
+    # therefore dropped for hosted APIs unless hosted_sampling is set
     vllm_extras: bool = True
+    hosted_sampling: bool = False
 
 
 @dataclass
@@ -485,6 +488,18 @@ def _override_llm(config, ep: LLMEndpoint, *, preserve_sampling: bool = False,
         for key in VLLM_ONLY_EXTRA_BODY:
             extra_body.pop(key, None)
             extra.pop(key, None)
+        # hosted OpenAI-compatible API: the token cap goes as max_completion_tokens (max_tokens is refused by the reasoning
+        # models) and temperature/top_p are left to the API's defaults unless the caller insists
+        drops = set(getattr(llm, "additional_drop_params", ()) or ()) | {"max_tokens"}
+        if not ep.hosted_sampling:
+            drops |= {"temperature", "top_p"}
+        try:
+            llm.additional_drop_params = tuple(sorted(drops))
+        except Exception:
+            pass
+        cap = getattr(llm, "max_tokens", None)
+        if cap:
+            extra_body.setdefault("max_completion_tokens", int(cap))
     if ep.seed is not None:
         extra_body["seed"] = int(ep.seed)
     if not extra_body:
