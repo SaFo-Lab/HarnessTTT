@@ -1,0 +1,56 @@
+type: tool
+name: upsert_middleware
+description: >-
+  Preferred middleware-authoring transaction. Supply one state-dependent
+  before_model hook and its causal intent. The runtime checks documented state
+  types, real last_step_kind values, reachable truth-table behavior, and tool
+  gates under both available and exhausted budgets. A require_tools gate forces
+  the immediate next tool call; the trusted wrapper replaces its free-form note
+  with a require_tools-derived NEXT-CALL message. Gates must be reachable,
+  budget-aware, state-dependent, and consistent with their immediate action;
+  constant reminders and impossible gates are rejected. Choose this transaction
+  only when task analysis favors automatic control over callable computation.
+  No middleware family is assigned by the slot. The transaction then atomically
+  writes wrapper/descriptor/mount/a sole runtime-owned prompt declaration and validates H2. Failure
+  rolls back every file and returns exact errors.
+input_schema:
+  type: object
+  properties:
+    name:
+      type: string
+      description: Stable snake_case middleware name.
+    implementation:
+      type: string
+      description: One standalone Python def before_model(hook_input); no external helpers or global/nonlocal memory.
+    description:
+      type: string
+      description: Concise automatic decision rule description, at most 600 chars.
+    usage_guidance:
+      type: string
+      description: Exact state boundary and intended intervention.
+    failure_mode:
+      type: string
+      description: Specific executor failure observed or predicted, at most 800 chars.
+    hypothesis:
+      type: string
+      description: Why this state intervention should address that failure, at most 800 chars.
+    expected_behavior_change:
+      type: string
+      description: Concrete next-decision behavior expected to change, at most 800 chars.
+    novelty_basis:
+      type: string
+      description: Difference from built-in and inherited middleware, at most 800 chars.
+    risk:
+      type: string
+      description: Main overconstraint, false-trigger, or deadlock risk, at most 800 chars.
+  required:
+    - name
+    - implementation
+    - description
+    - usage_guidance
+    - failure_mode
+    - hypothesis
+    - expected_behavior_change
+    - novelty_basis
+    - risk
+  additionalProperties: false

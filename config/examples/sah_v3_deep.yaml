@@ -1,0 +1,21 @@
+# Current sah v3 DEEP-mode push (what erdos/AC1/AC2 run now). All Adaptive
+# features OFF -> byte-identical to the running pipeline.
+protocol: sah
+task: eft__math__first_autocorr_ineq
+rounds: 12
+round_base: 820
+
+phi:
+  resume_export: /path/to/model_weights/exports/self_adapt_harness/mphi_f_firstaut_01
+  resume_ckpt: /path/to/model_weights/checkpoints/self_adapt_harness/mphi_f_firstaut_01
+
+sampling:
+  K: 8
+  mode: parallel
+  max_evals: 30
+  eval_timeout: 300      # DEEP: depth-limited task
+  force_tool_frac: 0.25
+
+reward:
+  impl: v3
+  hist_lambda: 0.3

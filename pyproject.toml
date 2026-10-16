@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harnessttt"
+version = "0.1.0"
+description = "HarnessTTT: learn to optimize the harness of a frozen executor at test time (paper code release)"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "Yingzi Ma" }, { name = "Yulong Cao" }, { name = "Nanxi Li" }, { name = "Fang Wu" },
+  { name = "Yizhe Zhang" }, { name = "James Zou" }, { name = "Yejin Choi" }, { name = "Chaowei Xiao" },
+]
+keywords = ["harness", "test-time training", "scientific discovery", "LLM agents", "LoRA"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# runtime of the executor side (task registry, evaluator subprocess, H2 runtime) and of the proposer-side collect step.
+# The NexAU agent runtime is pinned to a git commit + patch and installed by scripts/setup/setup_deps.sh (see
+# config/dependencies.lock.json); it is not on PyPI, so it is not listed here.
+dependencies = [
+  "pyyaml>=6",
+  "numpy",
+  "scipy",
+  "pandas",
+  "jsonschema",
+  "openai",
+]
+
+[project.optional-dependencies]
+# proposer LoRA update (slime is cloned and patched by scripts/setup/setup_slime.sh)
+train = ["torch", "transformers", "accelerate", "ray"]
+# serving the frozen executor and the proposer inside a round job
+serve = ["vllm"]
+# released harness packages from the Hugging Face dataset
+hub = ["huggingface_hub"]
+dev = ["pytest"]
+
+[project.urls]
+Paper = "https://arxiv.org/abs/2610.17370"
+"Project page" = "https://gray311.github.io/harnessrl/"
+Artifacts = "https://huggingface.co/datasets/gray311/HarnessRL"
+Repository = "https://github.com/SaFo-Lab/Self_Adapt_Harness"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+py-modules = ["pipeline"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["inner*", "outer*", "trainer*", "harnessttt*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.yml", "*.md", "*.json", "*.sh", "*.patch"]
+"inner.harness" = ["agent.yaml", "system.md", "tools/*.tool.yaml", "skills/*/SKILL.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["scripts/tests"]
+pythonpath = ["src"]

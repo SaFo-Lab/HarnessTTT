@@ -1,0 +1,81 @@
+{
+  "what": "Per-task combined_score of the current best H2 (round 1 = initial hand-written H2) under the standard inner budget: 20 evaluator calls, single seed. Used by the outer loop as the reward-normalization baseline and shown to the proposer in the H1 prompt.",
+  "harness": "src/inner/harness (h2_initial)",
+  "budget": {
+    "max_evaluator_calls": 20,
+    "seeds": 1
+  },
+  "jobs": {
+    "math+algotune": 2656067,
+    "adrs": 2656677,
+    "eplb": 2657027
+  },
+  "captured": "2026-07-22",
+  "notes": "hadamard here is the 20-eval run (0.1433), not the 60-eval 0.361 used in maintable.md. eplb final (job 2657027).",
+  "baseline": {
+    "eft__math__circle_packing": {
+      "seed": 0.36423689449571406,
+      "h2_best": 0.5608225468207615
+    },
+    "eft__math__hadamard_maximal_det": {
+      "seed": 0.14327485380116958,
+      "h2_best": 0.14327485380116958
+    },
+    "eft__math__erdos_min_overlap": {
+      "seed": 0.7694488256878874,
+      "h2_best": 0.8342771200086017
+    },
+    "eft__math__first_autocorr_ineq": {
+      "seed": 0.991407005765425,
+      "h2_best": 0.9914694359272692
+    },
+    "eft__math__second_autocorr_ineq": {
+      "seed": 0.9550495052953716,
+      "h2_best": 0.9997888936813033
+    },
+    "eft__algotune__affine_transform_2d": {
+      "seed": 0.9108966616908668,
+      "h2_best": 0.9175128686471865
+    },
+    "eft__algotune__convolve2d_full_fill": {
+      "seed": 0.8043054936327485,
+      "h2_best": 0.9126243479241283
+    },
+    "eft__algotune__fft_convolution": {
+      "seed": 0.9507886885675181,
+      "h2_best": 0.9517618532725591
+    },
+    "eft__algotune__polynomial_real": {
+      "seed": 0.8003710131385545,
+      "h2_best": 0.800614888997773
+    },
+    "eft__algotune__psd_cone_projection": {
+      "seed": 0.9347163642039904,
+      "h2_best": 0.9498543802583359
+    },
+    "adrs__prism": {
+      "seed": 21.891622105209393,
+      "h2_best": 24.021666874072007
+    },
+    "adrs__txn_scheduling": {
+      "seed": 2638.5224274406332,
+      "h2_best": 3610.1083032490974
+    },
+    "adrs__llm_sql": {
+      "seed": 0.0,
+      "h2_best": 0.09343955531989306
+    },
+    "adrs__eplb": {
+      "seed": 0.1263734727283441,
+      "h2_best": 0.1265392786992853
+    },
+    "eft__ahc_simpletes__ahc039": {
+      "seed": 2.474696,
+      "h2_best": 2.476554
+    },
+    "eft__ahc_simpletes__ahc058": {
+      "seed": 0.0,
+      "h2_best": 0.298859
+    }
+  }
+}

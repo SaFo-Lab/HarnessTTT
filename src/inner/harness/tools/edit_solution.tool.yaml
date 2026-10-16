@@ -1,0 +1,22 @@
+type: tool
+name: edit_solution
+description: >-
+  Change the code inside the # EVOLVE-BLOCK region. Two accepted formats:
+  (1) PREFERRED — one or more targeted SEARCH/REPLACE diff blocks, each matching
+  the current program exactly:
+  '<<<<<<< SEARCH' / exact original lines / '=======' / new lines /
+  '>>>>>>> REPLACE'. Do not rewrite the whole region for a small change.
+  (2) A full rewrite — the complete new EVOLVE-BLOCK body as plain code (fenced
+  ```python is allowed; the markers are optional). The fixed entry function and
+  imports outside the block are preserved automatically. After editing, call
+  evaluate_solution to score it.
+input_schema:
+  type: object
+  properties:
+    code:
+      type: string
+      description: >-
+        Either SEARCH/REPLACE diff block(s) to apply to the current program, or
+        the full replacement body for the EVOLVE-BLOCK region.
+  required: [code]
+  additionalProperties: false

@@ -1,0 +1,111 @@
+{
+ "schema": "harnessttt-lock/1.0",
+ "generated": "2026-09-24",
+ "slime": {
+  "url": "https://github.com/THUDM/slime.git",
+  "commit": "58ee74898f72aacd2413ffdf7685dc0eee72d8d8",
+  "branch": "harnessttt-pin",
+  "path": "slime",
+  "patch": {
+   "path": "scripts/patches/slime/openclaw_rl_f48ac35_on_slime_58ee7489.patch",
+   "sha256": "1890dacba934c3b15e5485708ac11756683bd075f70a7dd417e89725c23b73db",
+   "files_modified": 31,
+   "files_added": 17,
+   "derived_from": "Gen-Verse/OpenClaw-RL f48ac358adf9873b5cb2210f1cb234a52ed8a8a3 slime/ (= official slime 58ee7489 + OpenClaw's Qwen3.5 / FSDP-LoRA modifications) with SAH's seven training patches (qwen35 loss-mask arg, fsdp weights-only load, debug-train-only without sglang, train three values, fsdp sft loss, fsdp lora resume collective, fsdp chunked logprobs) applied"
+  },
+  "required_needles": [
+   [
+    "slime/utils/arguments.py",
+    "\"qwen3_5\""
+   ],
+   [
+    "slime/utils/arguments.py",
+    "\"--load-weights-only\""
+   ],
+   [
+    "slime/backends/sglang_utils/arguments.py",
+    "sglang is required unless --debug-train-only"
+   ],
+   [
+    "train.py",
+    "_prm_teacher_model = create_training_models"
+   ],
+   [
+    "slime/backends/fsdp_utils/actor.py",
+    "metric_tensor.numel() == 0"
+   ],
+   [
+    "slime/backends/fsdp_utils/lora_utils.py",
+    "Every rank must enter it"
+   ],
+   [
+    "slime/backends/fsdp_utils/actor.py",
+    "chunk_size=self.args.log_probs_chunk_size"
+   ],
+   [
+    "tools/merge_lora_adapter.py",
+    "adapter"
+   ]
+  ]
+ },
+ "megatron_lm": {
+  "url": "https://github.com/NVIDIA/Megatron-LM.git",
+  "tag": "core_v0.16.0",
+  "commit": "3bec9aa97dda898d16ff5a89bac0ed2b6682b172",
+  "env": "MEGATRON_ROOT",
+  "note": "the 2026-09 runs used Megatron-LM 0.16.0rc0 as bundled by OpenClaw-RL f48ac35; slime imports megatron.core (ppo_utils, arguments) even with --train-backend fsdp"
+ },
+ "nexau": {
+  "url": "https://github.com/nex-agi/NexAU.git",
+  "commit": "09e747b59e3684d5541d557087d6d93790c5a43f",
+  "env": "NEXAU_ROOT",
+  "patch": {
+   "path": "scripts/patches/nexau/nexau_transport.patch",
+   "sha256": "a0cd3a712a676c1e68d156e8117cd447921524eb45a2110e26e81cf95ce0f724",
+   "patched_diff_sha256": "eb3ad917bcb702d7fcdbe24f94246b10b74b4928f12d1f586baf6e88d4561dd7"
+  },
+  "needles": [
+   [
+    "nexau/archs/llm/llm_config.py",
+    "if self.max_retries is not None:"
+   ],
+   [
+    "nexau/archs/llm/llm_config.py",
+    "NEXAU_HTTP_CONNECTION_CLOSE"
+   ]
+  ]
+ },
+ "dataset": {
+  "path": "dataset/self_adapt_harness",
+  "copied_from": "self_adapt_harness dataset snapshot (2026-09-24, 889 files, 1.5 GB)",
+  "manifest_sha256": "acc3550e452340bdfee1580b8a2c8eb19db83d5b9285cdb2f7908ebb7d0582c6",
+  "provenance_sha256": "f6e0821c9d514a3e0566e83993155683652609a1dd1398e2eca8d36b18465261",
+  "upstream": {
+   "evolution-fine-tuning": "aac2e79be773715ab35b7945f5d9028e46675f02",
+   "SimpleTES": "b7e0367b5ab19554fb40859e8069e091bb8c4ca2"
+  },
+  "external_symlink": "raw/simpletes-47d3413/datasets/zapbench/whole_brain_forecasting/zapbench_cache (optional zapbench task cache, 5.9 GB, not copied)",
+  "gpu_tasks_added": "2026-09-28: raw/skydiscover-0d932b6/benchmarks/gpu_mode (skydiscover 0d932b6) + TTT-discover 6c40e82 initial programs; runtime/skydiscover_min/skydiscover shim"
+ },
+ "model": {
+  "id": "Qwen/Qwen3.5-9B",
+  "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+  "env": "SAH_MODEL_PATH"
+ },
+ "config": {
+  "finch_targets.json": "cf4d6d073b74aa2b6b918ce94e5d2cacfa858982a56fa670243883a8df8a1a20",
+  "task_text_registry.json": "20583de82cc2d19c8380758bbb3d56397fb7c4e36cb0a9e31f87f081d6861a82",
+  "baseline_h2_20ev.json": "429a2c39fec4fc425fa98fd194ecd085523a3ce4d796a5bc0f0790942d6e5a58"
+ },
+ "environments": {
+  "SAH_RUNTIME_ENV": "Python 3.12 environment with NexAU and the evaluator dependencies",
+  "VLLM_ENV": "vLLM 0.17.1 (Python 3.12)",
+  "TRAIN_ENV": "torch 2.9.1 cu128 + transformers 5.12.1 + flash-linear-attention 0.4.1 + ray (Python 3.12)",
+  "SAH_IMAGE": "CUDA container image (enroot .sqsh) with the docker/time shim the AHC evaluators expect"
+ },
+ "source": {
+  "sah_repo": "SAH research repository (code release = this tree)",
+  "src_from": "SAH worktree of 2026-09-24 (v11 + OVERCAP-001)",
+  "pipeline_from": "SAH online-training branch with the reward-ablation launcher refinements (OVERCAP handling, monitor v2, status, restart)"
+ }
+}

@@ -1,0 +1,11 @@
+type: tool
+name: submit_harness
+description: >-
+  Submit the current candidate H2 filesystem and end the proposer session. The
+  workspace is revalidated at submission; an invalid or unchanged H2 receives
+  minimum reward. Call only after validate_harness reports valid, and do not
+  edit any file between that validation and submission.
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false

@@ -1,0 +1,25 @@
+# HarnessTTT evolve loop -- edit, then:  python3 src/pipeline.py        (status: python3 src/pipeline.py status)
+# One file = one lineage (run dir $RUN_ROOT/<campaign>/<name>).  Site paths come from config/env.sh + config/local.env.
+campaign: default          # campaign dir under RUN_ROOT; holds GPU_CAP (optional file), briefs_none/, worktrees/
+name: hadamard_v3          # run dir name (also the Slurm job name suffix: htt-<name>-rN, htt-<name>-train-rN)
+task: hadamard             # cp26 | hadamard | <eft task id>
+adv: v3                    # advantage implementation of the collect step: v3 (RLOO + 0.3 softmax sharpening) | grpo | v2 | legacy | anchored
+k: 8                       # candidate harnesses per round
+round_gpus: 2              # GPUs of a round job (one vLLM replica per GPU; 2 for K=8)
+train_gpus: 8              # GPUs of the LoRA update (the validated recipe pads the batch to a multiple of this)
+max_round: 15              # the loop stops after this round is collected (no training after the last round)
+h1_seed: 7311              # H1 sampling seed for round 1 (+ round - 1 afterwards)
+max_evals: 20              # evaluator calls per executor trajectory
+eval_timeout: 600          # seconds per evaluation (the strict ratchet caps adopted programs at 0.8 x this, Hadamard: 0.8 x 350)
+token_budget: 18000        # replay bound before training (terminal-preserving)
+lr: 1e-5
+kl: 0.1
+over_cap_as_invalid: true  # OVERCAP-001: an over-cap program is an invalid proposal (-1), not a refused round
+round_time: "06:00:00"     # Slurm wall limits
+train_time: "02:30:00"
+poll_seconds: 60           # progress poll interval while a job runs
+heartbeat_minutes: 10      # print a progress line at least this often even without change
+freeze: true               # jobs execute from an immutable git worktree of the committed HEAD ($RUN_ROOT/<campaign>/worktrees/htt_<sha>)
+max_round_retries: 2       # re-submit a round whose job ended without collecting (archived as roundNNN_failed_<stamp>)
+max_train_retries: 1
+# gpu_cap / max_jobs default to HARNESSTTT_GPU_CAP / HARNESSTTT_MAX_JOBS from config/env.sh (48 / 15); a GPU_CAP file in the campaign dir wins.

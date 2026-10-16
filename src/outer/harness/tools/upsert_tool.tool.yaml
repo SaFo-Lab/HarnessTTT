@@ -1,0 +1,57 @@
+type: tool
+name: upsert_tool
+description: >-
+  Preferred tool-authoring transaction. Supply one substantive run(ctx, args)
+  implementation plus its schema, usage contract, and causal hypothesis. The
+  runtime preflights safety, utility, schema reachability, and successful mock
+  execution for every schema-valid sample (explicit error returns fail);
+  then atomically writes code/schema/mount/a sole audited prompt declaration and validates the
+  complete H2. Failure rolls back every file and returns exact structured errors.
+  Choose this transaction only when task analysis favors executor-callable
+  computation over an automatic middleware decision. No particular tool family
+  is assigned by the slot.
+input_schema:
+  type: object
+  properties:
+    name:
+      type: string
+      description: Stable snake_case component name.
+    implementation:
+      type: string
+      description: Complete Python code defining def run(ctx, args); malformed/adversarial inputs return structured JSON-safe rejections instead of raising.
+    description:
+      type: string
+      description: Executor-facing capability description, at most 800 chars.
+    input_schema:
+      type: object
+      description: JSON Schema object with type object and properties; declare every implementation argument and its valid domain.
+    usage_guidance:
+      type: string
+      description: Observable trigger and how the executor uses the result.
+    failure_mode:
+      type: string
+      description: Specific executor failure observed or predicted, at most 800 chars.
+    hypothesis:
+      type: string
+      description: Why this computation should address that failure, at most 800 chars.
+    expected_behavior_change:
+      type: string
+      description: Concrete future executor behavior that should change, at most 800 chars.
+    novelty_basis:
+      type: string
+      description: Why this differs from the parent and prior failed proposals, at most 800 chars.
+    risk:
+      type: string
+      description: Main false-positive, overconstraint, or cost risk, at most 800 chars.
+  required:
+    - name
+    - implementation
+    - description
+    - input_schema
+    - usage_guidance
+    - failure_mode
+    - hypothesis
+    - expected_behavior_change
+    - novelty_basis
+    - risk
+  additionalProperties: false

@@ -1,0 +1,18 @@
+type: tool
+name: write_harness_file
+description: >-
+  Raw fallback to create or replace one H2 file. Prefer upsert_skill,
+  upsert_tool, or upsert_middleware for new components because they write every surface and
+  validate atomically. Runtime/provenance files are read-only, and an existing
+  file must first be present in a complete preload record or read with `cat`.
+input_schema:
+  type: object
+  properties:
+    path:
+      type: string
+      description: Relative H2 path, such as custom_tools/shape_probe.py.
+    content:
+      type: string
+      description: Complete UTF-8 file contents.
+  required: [path, content]
+  additionalProperties: false

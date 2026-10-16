@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "axis_unit": "generated_agent_trajectory",
+  "fixed_h2_slots": false,
+  "h1_slots_per_task": 8,
+  "h2_slots_per_task": null,
+  "h2_slot_plan_rows_per_task": null,
+  "paired_control_slots_per_task": 0,
+  "causal_attribution": {
+    "schema": "paired-parent-control/1.0",
+    "enabled": false,
+    "candidate_root": "rollouts",
+    "control_root": null,
+    "pairing": "same_task_program_budget_model_decode_seed",
+    "repeats_per_candidate": 0,
+    "minimum_promotion_repeats": 3,
+    "minimum_effect": 0.0001,
+    "activation_contract": "generated_tool_top_level_ok_true_or_middleware_fire"
+  },
+  "logical_round_index": 13,
+  "axis_x_after_round": null,
+  "analyzer_model_calls_excluded_from_axis": true,
+  "post_submit_reviewer_model_calls": 0,
+  "fallback_slots_forbidden": false,
+  "invalid_slots_omitted": [],
+  "emitted_h2_slots": 6,
+  "slots": [
+    {
+      "task_id": "eft__math__hadamard_maximal_det",
+      "k": 0,
+      "h1_proposal_valid": true,
+      "h2_harness_dir": "/path/to/runs/hadamard_v3/rounds/round014/tasks/eft__math__hadamard_maximal_det/cand00",
+      "h2_parent_package": "/path/to/runs/hadamard_v3/rounds/round008/tasks/eft__math__hadamard_maximal_det/cand00",
+      "h2_slot_mode": "candidate_harness",
+      "eligible_for_h1_reward": true
+    },
+    {
+      "task_id": "eft__math__hadamard_maximal_det",
+      "k": 1,
+      "h1_proposal_valid": true,
+      "h2_harness_dir": "/path/to/runs/hadamard_v3/rounds/round014/tasks/eft__math__hadamard_maximal_det/cand01",
+      "h2_parent_package": "/path/to/runs/hadamard_v3/rounds/round013/tasks/eft__math__hadamard_maximal_det/cand00",
+      "h2_slot_mode": "candidate_harness",
+      "eligible_for_h1_reward": true
+    },
+    {
+      "task_id": "eft__math__hadamard_maximal_det",
+      "k": 2,
+      "h1_proposal_valid": true,
+      "h2_harness_dir": "/path/to/runs/hadamard_v3/rounds/round014/tasks/eft__math__hadamard_maximal_det/cand02",
+      "h2_parent_package": "/path/to/runs/hadamard_v3/rounds/round008/tasks/eft__math__hadamard_maximal_det/cand00",
+      "h2_slot_mode": "candidate_harness",
+      "eligible_for_h1_reward": true
+    },
+    {
+      "task_id": "eft__math__hadamard_maximal_det",
+      "k": 3,
+      "h1_proposal_valid": true,
+      "h2_harness_dir": "/path/to/runs/hadamard_v3/rounds/round014/tasks/eft__math__hadamard_maximal_det/cand03",
+      "h2_parent_package": "/path/to/runs/hadamard_v3/rounds/round013/tasks/eft__math__hadamard_maximal_det/cand00",
+      "h2_slot_mode": "candidate_harness",
+      "eligible_for_h1_reward": true
+    },
+    {
+      "task_id": "eft__math__hadamard_maximal_det",
+      "k": 5,
+      "h1_proposal_valid": true,
+      "h2_harness_dir": "/path/to/runs/hadamard_v3/rounds/round014/tasks/eft__math__hadamard_maximal_det/cand05",
+      "h2_parent_package": "/path/to/runs/hadamard_v3/rounds/round013/tasks/eft__math__hadamard_maximal_det/cand00",
+      "h2_slot_mode": "candidate_harness",
+      "eligible_for_h1_reward": true
+    },
+    {
+      "task_id": "eft__math__hadamard_maximal_det",
+      "k": 6,
+      "h1_proposal_valid": true,
+      "h2_harness_dir": "/path/to/runs/hadamard_v3/rounds/round014/tasks/eft__math__hadamard_maximal_det/cand06",
+      "h2_parent_package": "/path/to/runs/hadamard_v3/rounds/round008/tasks/eft__math__hadamard_maximal_det/cand00",
+      "h2_slot_mode": "candidate_harness",
+      "eligible_for_h1_reward": true
+    }
+  ]
+}

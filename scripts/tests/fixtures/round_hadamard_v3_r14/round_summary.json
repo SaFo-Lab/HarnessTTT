@@ -1,0 +1,547 @@
+{
+  "round": 14,
+  "groups": {
+    "eft__math__hadamard_maximal_det": {
+      "task_id": "eft__math__hadamard_maximal_det",
+      "base_score": 0.8109639778551038,
+      "reward_mean": -0.25,
+      "reward_std": 0.4330127018922193,
+      "rows": [
+        {
+          "k": 0,
+          "valid": true,
+          "repaired": false,
+          "score": 0.8109639778551038,
+          "reward": 0.0,
+          "spec_hash": "sha256:fc76d350f4293ba1",
+          "changed_fields": [
+            "system_prompt",
+            "new_tools.hadamard_row_col_swap",
+            "new_tools.hadamard_diversity_enhanced"
+          ],
+          "review_log": [
+            {
+              "kind": "tool",
+              "name": "hadamard_refinement",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_permutation_search",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_pipeline",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_diversity_injector",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_row_col_swap",
+              "ok": true,
+              "utility_required": true,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_diversity_enhanced",
+              "ok": true,
+              "utility_required": true,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            }
+          ],
+          "advantage": 0.2583333333333333,
+          "advantage_eligible": true,
+          "proposal_group_id": "h1g_dca1bce2aea5bf8402eeae85"
+        },
+        {
+          "k": 1,
+          "valid": true,
+          "repaired": false,
+          "score": 0.8109639778551038,
+          "reward": 0.0,
+          "spec_hash": "sha256:a0b3a3f784e8fb60",
+          "changed_fields": [
+            "system_prompt",
+            "new_tools.hadamard_construction_diversity"
+          ],
+          "review_log": [
+            {
+              "kind": "tool",
+              "name": "hadamard_refinement",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_permutation_search",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_pipeline",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_diversity_injector",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_construction_diversity",
+              "ok": true,
+              "utility_required": true,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            }
+          ],
+          "advantage": 0.2583333333333333,
+          "advantage_eligible": true,
+          "proposal_group_id": "h1g_37379e6535d7af71785114e9"
+        },
+        {
+          "k": 2,
+          "valid": true,
+          "repaired": false,
+          "score": 0.8109639778551038,
+          "reward": 0.0,
+          "spec_hash": "sha256:6f00977faaa151db",
+          "changed_fields": [
+            "system_prompt",
+            "new_skills.hadamard-tool-orchestration"
+          ],
+          "review_log": [
+            {
+              "kind": "skill",
+              "name": "hadamard-tool-orchestration",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_refinement",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_permutation_search",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_pipeline",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_diversity_injector",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            }
+          ],
+          "advantage": 0.2583333333333333,
+          "advantage_eligible": true,
+          "proposal_group_id": "h1g_dca1bce2aea5bf8402eeae85"
+        },
+        {
+          "k": 3,
+          "valid": true,
+          "repaired": false,
+          "score": 0.8109639778551038,
+          "reward": 0.0,
+          "spec_hash": "sha256:96d7b8330333afd8",
+          "changed_fields": [
+            "system_prompt",
+            "sampling.temperature",
+            "new_skills.hadamard-tool-pipeline"
+          ],
+          "review_log": [
+            {
+              "kind": "skill",
+              "name": "hadamard-tool-pipeline",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_refinement",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_permutation_search",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_pipeline",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_diversity_injector",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            }
+          ],
+          "advantage": 0.2583333333333333,
+          "advantage_eligible": true,
+          "proposal_group_id": "h1g_37379e6535d7af71785114e9"
+        },
+        {
+          "k": 4,
+          "valid": false,
+          "repaired": false,
+          "score": null,
+          "reward": -1.0,
+          "spec_hash": "",
+          "changed_fields": [],
+          "review_log": [],
+          "advantage": -0.7749999999999999,
+          "advantage_eligible": true,
+          "proposal_group_id": "h1g_dca1bce2aea5bf8402eeae85"
+        },
+        {
+          "k": 5,
+          "valid": true,
+          "repaired": false,
+          "score": 0.8109639778551038,
+          "reward": 0.0,
+          "spec_hash": "sha256:9094800bff0b46fc",
+          "changed_fields": [
+            "system_prompt",
+            "new_tools.hadamard_diversity_injector"
+          ],
+          "review_log": [
+            {
+              "kind": "tool",
+              "name": "hadamard_refinement",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_permutation_search",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_pipeline",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_diversity_injector",
+              "ok": true,
+              "utility_required": true,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            }
+          ],
+          "advantage": 0.2583333333333333,
+          "advantage_eligible": true,
+          "proposal_group_id": "h1g_37379e6535d7af71785114e9"
+        },
+        {
+          "k": 6,
+          "valid": true,
+          "repaired": false,
+          "score": 0.8109639778551038,
+          "reward": 0.0,
+          "spec_hash": "sha256:8007946e28164906",
+          "changed_fields": [
+            "system_prompt",
+            "new_tools.hadamard_systematic_search"
+          ],
+          "review_log": [
+            {
+              "kind": "tool",
+              "name": "hadamard_refinement",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_permutation_search",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_pipeline",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_diversity_injector",
+              "ok": true,
+              "utility_required": false,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            },
+            {
+              "kind": "tool",
+              "name": "hadamard_systematic_search",
+              "ok": true,
+              "utility_required": true,
+              "mutated_after_h1": false,
+              "error": null,
+              "history": []
+            }
+          ],
+          "advantage": 0.2583333333333333,
+          "advantage_eligible": true,
+          "proposal_group_id": "h1g_dca1bce2aea5bf8402eeae85"
+        },
+        {
+          "k": 7,
+          "valid": false,
+          "repaired": false,
+          "score": null,
+          "reward": -1.0,
+          "spec_hash": "",
+          "changed_fields": [],
+          "review_log": [],
+          "advantage": -0.7749999999999999,
+          "advantage_eligible": true,
+          "proposal_group_id": "h1g_37379e6535d7af71785114e9"
+        }
+      ],
+      "adv_mode": "condition_partitioned:rloo+max(a=0.3)",
+      "condition_groups": [
+        {
+          "proposal_group_id": "h1g_37379e6535d7af71785114e9",
+          "slots": [
+            1,
+            3,
+            5,
+            7
+          ],
+          "adv_mode": "rloo+max(a=0.3)",
+          "reward_mean": -0.25,
+          "reward_std": 0.4330127018922193,
+          "best_k": 1,
+          "best_score": 0.8109639778551038,
+          "best_causal_delta": null,
+          "best_component_credit_delta": null,
+          "promotion_best_k": null,
+          "training_slots": [
+            1,
+            3,
+            5,
+            7
+          ],
+          "training_adv_mode": "rloo+max(a=0.3)",
+          "training_reward_mean": -0.25,
+          "training_reward_std": 0.4330127018922193
+        },
+        {
+          "proposal_group_id": "h1g_dca1bce2aea5bf8402eeae85",
+          "slots": [
+            0,
+            2,
+            4,
+            6
+          ],
+          "adv_mode": "rloo+max(a=0.3)",
+          "reward_mean": -0.25,
+          "reward_std": 0.4330127018922193,
+          "best_k": 0,
+          "best_score": 0.8109639778551038,
+          "best_causal_delta": null,
+          "best_component_credit_delta": null,
+          "promotion_best_k": null,
+          "training_slots": [
+            0,
+            2,
+            4,
+            6
+          ],
+          "training_adv_mode": "rloo+max(a=0.3)",
+          "training_reward_mean": -0.25,
+          "training_reward_std": 0.4330127018922193
+        }
+      ],
+      "best_k": 0,
+      "best_score": 0.8109639778551038,
+      "improved": false,
+      "ceiling": 0.5764,
+      "program_ratchet": {
+        "incoming_h2_score": 0.8109639778551038,
+        "incoming_program_score": 0.8109639778551038,
+        "threshold": 0.8109639778551038,
+        "candidate_k": 0,
+        "candidate_score": 0.8109639778551038,
+        "candidate_eval_time": 236.36935901641846,
+        "eval_time_cap": 280.0,
+        "candidate_program_sha256": "568a3100736bd5f36681fb2d136457a8372b9fd939dece0df45f44bf307203ee",
+        "rollout_seed_score": 0.8109639778551038,
+        "rollout_seed_program_sha256": "568a3100736bd5f36681fb2d136457a8372b9fd939dece0df45f44bf307203ee",
+        "expected_seed_registry_sha256": "c90333829d3d8fcc0a4f001d3b2e34ed1f27529c0cf9cfb491e9846421198551",
+        "rollout_seed_registry_sha256": "c90333829d3d8fcc0a4f001d3b2e34ed1f27529c0cf9cfb491e9846421198551",
+        "rollout_h2_sha256": "5a6388d08d52e1b6a66efff3457d15f26aefae8dfeed5c401efe8cd149d62072",
+        "rollout_h2_stable": true,
+        "group_reported_score": 0.8109639778551038,
+        "promoted": false,
+        "reason": "no_program_change",
+        "outgoing_program_sha256": "568a3100736bd5f36681fb2d136457a8372b9fd939dece0df45f44bf307203ee"
+      },
+      "accepted_improvement": false
+    }
+  },
+  "inference_trajectory_budget": {
+    "schema": 1,
+    "axis_unit": "generated_agent_trajectory",
+    "fixed_h1_plus_h2_slots": false,
+    "logical_round_index": 13,
+    "h1_slots_per_task": 8,
+    "h2_slots_per_task": null,
+    "paired_control_slots_per_task": 0,
+    "nominal_total_slots_per_task": null,
+    "shared_anchor_x": null,
+    "axis_x_after_round": null,
+    "h2_decode_seed_base": 200000,
+    "h2_decode_seed_stride": 16,
+    "h2_decode_seeds": [
+      200208,
+      200209,
+      200210,
+      200211,
+      200212,
+      200213,
+      200214,
+      200215
+    ],
+    "h2_decode_seed_matrix": [
+      [
+        200208
+      ],
+      [
+        200209
+      ],
+      [
+        200210
+      ],
+      [
+        200211
+      ],
+      [
+        200212
+      ],
+      [
+        200213
+      ],
+      [
+        200214
+      ],
+      [
+        200215
+      ]
+    ],
+    "analyzer_calls_excluded_from_axis": true,
+    "post_submit_reviewer_model_calls": 0
+  },
+  "improved_tasks": [],
+  "accepted_improved_tasks": []
+}

@@ -1,0 +1,26 @@
+type: tool
+name: edit_harness_file
+description: >-
+  Raw fallback for one fully inspected inherited H2 file. Either replace
+  old_text exactly once, or append a small section. Use it for evidence-backed
+  prompt, skill, sampling, registration, plumbing, or multi-file portfolio
+  edits when no matching atomic transaction is exposed.
+input_schema:
+  type: object
+  properties:
+    path:
+      type: string
+      description: Relative path to an existing mutable H2 file.
+    old_text:
+      type: string
+      description: Exact current text that must occur once.
+    new_text:
+      type: string
+      description: Replacement text; use an empty string to remove the match.
+    append_text:
+      type: string
+      description: >-
+        Text to append as a new section. Do not combine it with old_text or
+        new_text. Prefer this for a concise task-specific prompt.md addition.
+  required: [path]
+  additionalProperties: false

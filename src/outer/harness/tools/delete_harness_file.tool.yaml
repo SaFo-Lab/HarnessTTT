@@ -1,0 +1,15 @@
+type: tool
+name: delete_harness_file
+description: >-
+  Delete one mutable file from the private candidate H2. To remove a generated
+  component, first `cat` the file, remove its mount from agent.yaml, then delete
+  its schema/code or skill files and remove its name from prompt.md. Directories
+  need not be deleted. Core runtime implementations cannot be deleted.
+input_schema:
+  type: object
+  properties:
+    path:
+      type: string
+      description: Relative path of one file to delete.
+  required: [path]
+  additionalProperties: false

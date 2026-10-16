@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Fake `sbatch` for HarnessTTT pipeline tests (no Slurm, no GPUs).
+
+Parses the generated sbatch script (job name, gres, `export SAH9B_*` lines), registers a job in $FAKE_SLURM_DIR and spawns a
+detached fake worker that fabricates the artefacts a real round / training job would leave behind, phase by phase (so the
+runner's progress reporting is exercised), from scripts/tests/fixtures/round_hadamard_v3_r14.  Knobs (env):
+  FAKE_STEP_SECONDS   pause between phases (default 0.3)
+  FAKE_FAIL_ROUNDS    comma-separated rounds whose FIRST attempt ends without collecting (exercise archive + retry)
+  FAKE_ZERO_ADV_ROUNDS rounds whose grpo_batch gets all-zero advantages (exercise the training-skip path)
+  FAKE_FAIL_TRAIN     comma-separated rounds whose FIRST training attempt writes FAILED
+"""
+import json, os, random, re, shlex, shutil, subprocess, sys, time
+from pathlib import Path
+
+STATE = Path(os.environ["FAKE_SLURM_DIR"])
+FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "round_hadamard_v3_r14"
+STEP = float(os.environ.get("FAKE_STEP_SECONDS", "0.3"))
+
+
+def set_state(jid, state):
+    p = STATE / f"{jid}.json"
+    d = json.loads(p.read_text()); d["state"] = state; p.write_text(json.dumps(d))
+
+
+def parse(script):
+    env, name, gpus = {}, "job", 0
+    for line in Path(script).read_text().splitlines():
+        m = re.match(r"#SBATCH --job-name=(\S+)", line)
+        if m:
+            name = m.group(1)
+        m = re.match(r"#SBATCH --gres=gpu:(\d+)", line)
+        if m:
+            gpus = int(m.group(1))
+        if line.startswith("export "):
+            for tok in shlex.split(line[len("export "):]):
+                if "=" in tok:
+                    k, v = tok.split("=", 1); env[k] = v
+    return env, name, gpus
+
+
+def once(marker):
+    if marker.exists():
+        return False
+    marker.write_text("1"); return True
+
+
+def round_worker(env, jid):
+    run = Path(env["SAH9B_RUN_DIR"]); n = int(env["SAH9B_ROUND"]); tid = env["SAH9B_TASKS"].strip('"')
+    rd = run / "rounds" / f"round{n:03d}"
+    set_state(jid, "RUNNING"); time.sleep(STEP)
+    if (rd / "round.json").exists():   # the real worker refuses to overwrite an existing round (exit 42)
+        set_state(jid, "FAILED"); return
+    rd.mkdir(parents=True, exist_ok=True)
+    (rd / "PORT_BASE").write_text("34099\n"); time.sleep(STEP)
+    (rd / "propose.log").write_text("fake propose\n")
+    for k in range(int(env.get("SAH9B_K", "8"))):
+        (rd / "tasks" / tid / f"cand{k:02d}").mkdir(parents=True, exist_ok=True); time.sleep(STEP / 4)
+    (rd / "trajectory_budget.log").write_text("fake\n"); time.sleep(STEP / 2)
+    shutil.copy(FIXTURE / "h2_slot_plan.json", rd / "h2_slot_plan.json")
+    for slot in json.loads((FIXTURE / "h2_slot_plan.json").read_text())["slots"]:
+        d = rd / "rollouts" / tid / f"cand{int(slot['k']):02d}" / "fake"; d.mkdir(parents=True, exist_ok=True)
+        (d / "summary.json").write_text("{}"); time.sleep(STEP / 2)
+    (rd / "collect.log").write_text("[collect] fake\n"); time.sleep(STEP / 2)
+    fails = {int(x) for x in os.environ.get("FAKE_FAIL_ROUNDS", "").split(",") if x.strip()}
+    if n in fails and once(run / f".fake_failed_once_r{n}"):
+        (run / "INFRA_FAILURES.log").open("a").write(f"{time.strftime('%FT%T')} round={n} attempt=1 fake infrastructure failure\n")
+        set_state(jid, "FAILED"); return
+    zero = {int(x) for x in os.environ.get("FAKE_ZERO_ADV_ROUNDS", "").split(",") if x.strip()}
+    rows = [json.loads(l) for l in (FIXTURE / "grpo_batch.jsonl").read_text().splitlines() if l.strip()]
+    for r in rows:
+        r["round"] = n
+        if n in zero:
+            r["advantage"] = 0.0
+    (rd / "grpo_batch.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    for name in ("round_summary.json", "next_bases.json", "best_programs_after.json", "task_feedback_after.json"):
+        shutil.copy(FIXTURE / name, rd / name)
+    (rd / "round.json").write_text(json.dumps({"round": n, "fake": True, "proposer": env.get("SAH9B_PROPOSER_MODEL"),
+                                               "bases": env.get("SAH9B_BASES_FILE")}, indent=1))
+    shutil.copy(FIXTURE / "best_programs_after.json", run / "rounds" / "best_programs.json")
+    shutil.copy(FIXTURE / "task_feedback_after.json", run / "rounds" / "task_feedback.json")
+    set_state(jid, "COMPLETED")
+
+
+def train_worker(env, jid):
+    td = Path(env["SAH9B_TRAIN_DIR"]); n = int(env["SAH9B_TRAIN_ROUND"]); td.mkdir(parents=True, exist_ok=True)
+    set_state(jid, "RUNNING"); time.sleep(STEP)
+    (td / "bound_replay.log").write_text("RESULT mode=terminal in=8 kept=8 dropped=0 truncated=2\n"); time.sleep(STEP)
+    (td / "ray_status.log").write_text("Active:\n 1 node\n"); time.sleep(STEP)
+    with (td / "train.log").open("w") as fh:
+        for step in range(3):
+            fh.write(f"rollout {step} loss 0.{step}\n"); fh.flush(); time.sleep(STEP / 2)
+    fails = {int(x) for x in os.environ.get("FAKE_FAIL_TRAIN", "").split(",") if x.strip()}
+    if n in fails and once(td.parent / f".fake_train_failed_once_r{n}"):
+        (td / "FAILED").write_text("failed_utc=fake rc=1\n"); set_state(jid, "FAILED"); return
+    (td / "TRAINED").write_text("trained\n")
+    (td / "merge.log").write_text("MERGE_DONE\n"); time.sleep(STEP / 2)
+    (td / "merged").mkdir(exist_ok=True); (td / "merged" / "config.json").write_text("{}")
+    adapter = td / "ckpt" / "iter_0000003" / "model"; adapter.mkdir(parents=True, exist_ok=True)
+    state = {"schema": 2, "tag": env.get("SAH9B_TRAIN_TAG"), "round": n, "model_path": str(td / "merged"),
+             "adapter_path": str(adapter), "weights_updated": True, "skip_reason": None, "slurm_job_id": jid,
+             "prev_state": env.get("SAH9B_TRAIN_PREV_STATE"), "replay": env.get("SAH9B_TRAIN_REPLAY")}
+    (td / "model_state.json").write_text(json.dumps(state, indent=2) + "\n")
+    (td / "TRAIN_COMPLETE").write_text("completed_utc=fake\nupdated=true\n")
+    set_state(jid, "COMPLETED")
+
+
+def baseline_worker(env, jid):
+    """Fake frozen-harness baseline: progress file + baseline_h2_20ev-format table for the task (seed / h2_best)."""
+    run = Path(env["SAH9B_RUN_DIR"]); tid = env["SAH9B_TASKS"].strip('"'); out = Path(env["SAH9B_BASELINE_OUT"])
+    b = run / "baseline"; b.mkdir(parents=True, exist_ok=True)
+    set_state(jid, "RUNNING"); time.sleep(STEP)
+    (b / "progress.txt").write_text("vLLM executor replica starting\n"); time.sleep(STEP)
+    seed = 0.0
+    if env.get("SAH9B_SEED_PROGRAMS_FILE"):
+        seed = float(json.loads(Path(env["SAH9B_SEED_PROGRAMS_FILE"]).read_text())[tid]["score"])
+    (b / "progress.txt").write_text("frozen-harness run 1/1 finished\n"); time.sleep(STEP)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"what": "fake baseline", "baseline": {tid: {"seed": seed, "h2_best": seed + 0.01, "h2_runs": [seed + 0.01]}}}, indent=1))
+    set_state(jid, "COMPLETED")
+
+
+def main():
+    if sys.argv[1:2] == ["--worker"]:
+        kind, env, jid = sys.argv[2], json.loads(sys.argv[3]), sys.argv[4]
+        {"round": round_worker, "train": train_worker, "baseline": baseline_worker}[kind](env, jid)
+        return 0
+    if (STATE / "DOWN").exists():   # simulated controller outage (OUTAGE-001 tests)
+        print("sbatch: error: Batch job submission failed: Slurm backup controller in standby mode", file=sys.stderr); return 1
+    script = sys.argv[-1]
+    env, name, gpus = parse(script)
+    kind = "train" if "SAH9B_TRAIN_DIR" in env else "baseline" if "SAH9B_BASELINE_OUT" in env else "round"
+    jid = str(int(time.time() * 1000) % 10_000_000 + random.randint(0, 99))
+    STATE.mkdir(parents=True, exist_ok=True)
+    (STATE / f"{jid}.json").write_text(json.dumps({"id": jid, "name": name, "state": "PENDING", "kind": kind, "gpus": gpus,
+                                                   "t0": time.time(), "script": script, "argv": sys.argv[1:]}))
+    shutil.copy(script, script + ".submitted")
+    subprocess.Popen([sys.executable, __file__, "--worker", kind, json.dumps(env), jid], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=(STATE / f"{jid}.err").open("w"))
+    if os.environ.get("FAKE_SBATCH_LOSE_REPLY") and once(STATE / ".lost_reply_once"):
+        # the job exists and runs, but the submitter never hears its id (reply lost in a controller fail-over)
+        print("sbatch: error: Batch job submission failed: Socket timed out on send/recv operation", file=sys.stderr); return 1
+    print(jid)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

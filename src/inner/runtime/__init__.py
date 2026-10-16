@@ -1,0 +1,1 @@
+"""Inner-loop runtime: session state/budget ledger (session), the generated-tool capability surface (harness_sdk), the NexAU executor driver (harness_runner), and canonical package hashing (package_hash)."""

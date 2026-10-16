@@ -1,0 +1,84 @@
+# =============================================================================
+# SAH campaign configuration — human-readable view of the ACTIVE profile
+# =============================================================================
+# This file mirrors what the currently-running campaign uses
+# (cp10div-20260812_113509, protocol fair24-v6, H1 v2.4-diverse).
+#
+# HOW VALUES TAKE EFFECT
+#   tunable: exported as an environment variable at LAUNCH time — edit here,
+#            then `source config/load_env.sh` in the shell that submits
+#            init / starts the driver.  A running campaign's snapshot is
+#            immutable; changes apply to the NEXT campaign (or to driver-side
+#            knobs on a driver restart).
+#   fixed:   hardcoded in the named file — editing requires a code change and
+#            a new snapshot.
+# =============================================================================
+
+protocol:
+  id: why-update-harness-11x3-fair24-v6        # fixed: experiments/why_update_harness/config.sh
+  h1_version: h1/2.4-diverse                   # fixed: src/outer/proposing/proposer_io.py
+  rounds_default: 19                           # fixed: config.sh CURVE_ROUNDS (driver overrides per launch)
+
+proposer_h1:
+  max_iters: 12                # tunable SAH_H1_MAX_ITERS (worker exports 12)
+  preload: true                # tunable SAH_H1_PRELOAD — all mutable files in first message
+  no_tool_nudges: 8            # tunable SAH_H1_NO_TOOL_NUDGES (32 used during phi-drift incidents)
+  diversity_roles: true        # tunable CURVE_H1_DIVERSITY -> SAH_H1_DIVERSITY
+                               #   k0/k1 forced tool, k2/k3 structural rewrite,
+                               #   k4 alternative-family skill, k5 capability tool,
+                               #   k6 middleware/runtime, k7 free
+  novelty_guard: true          # tunable CURVE_NOVELTY_GUARD -> SAH_NOVELTY_GUARD
+                               #   submit-time refusal (x2) of causally-futile repeats
+  sequential_sampling: false   # tunable SAH_SEQUENTIAL — within-batch diversity, ~3-4x slower propose
+  prompt_cap_chars: 10000      # fixed: src/outer/workspace/propose_session.py _PROMPT_CAP
+  force_tool_frac: 0.25        # fixed: config.sh CURVE_FORCE_TOOL_FRAC (=> slots k0,k1 forced)
+
+repair:
+  enabled: true                # tunable SAH_REPAIR (worker exports 1)
+  max_iters: 14                # tunable SAH_REPAIR_MAX_ITERS
+  model: frozen-M0 (last replica of the split pool)   # fixed: FROZENREPAIR-001, round_worker.sh
+  phi_credit_for_repaired: INVALID_REWARD (-1)        # fixed: src/outer/reward/rewards.py
+
+gates:
+  proposal_gate: min6          # tunable SAH_PROPOSAL_GATE (min6 = >=6/8 valid after repair, fail-closed)
+  phi_probe: 4                 # tunable CURVE_PHI_PROBE — behavioral tool-call probes on fresh
+                               #   trained weights; 0 hits => in-band update rejection
+  program_ratchet: strict_single   # tunable SAH_PROGRAM_RATCHET_MODE + SAH_REQUIRE_STRICT_RATCHET
+
+paired_causal_controls:
+  adv_mode: paired             # tunable SAH_ADV=paired (RLOO+max, alpha 0.3)
+  alpha: 0.3                   # tunable SAH_ALPHA
+  repeats: 2                   # tunable CURVE_PAIRED_REPEATS — R seed pairs per candidate,
+                               #   delta = mean over pairs; R=1 restores fair24 exactly
+  min_paired_effect: 0         # tunable SAH_MIN_PAIRED_EFFECT
+  base_refresh: true           # fixed: BASEREFRESH-001 in outer_round.py (>=4 controls, eps 1e-3)
+
+budget_per_round:              # all derived from repeats (fixed formulas, config.sh)
+  proposer_trajectories: 8
+  candidate_rollouts: 16       # 8 * repeats
+  control_rollouts: 16         # 8 * repeats
+  total_trajectories: 40       # 8 + 16*repeats
+  executor_max_evals: 20       # fixed: CURVE_MAX_EVALS
+
+training:
+  lr: 1e-5                     # tunable CURVE_TRAIN_LR (train_worker.sh default)
+  kl_loss_type: low_var_kl     # fixed: train_worker.sh (KLDIV-001 — clamped non-negative k3)
+  kl_coef: 0.1                 # fixed: train_worker.sh --kl-loss-coef
+  token_budget: 18000          # tunable CURVE_TRAIN_TOKEN_BUDGET (driver backs off 14000/12000 on OOM)
+  lora: r64 alpha128           # fixed: train_worker.sh
+  zerograd_skip: true          # fixed: drive_cp_curve.sh ZEROGRAD-001 (reward spread < 1e-4 => skip boundary)
+  kldiv_auto_reject: true      # fixed: drive_cp_curve.sh KLDIV-001 (round attempt>=3 => revert phi lineage)
+
+resources:
+  gpus_per_round_job: 4        # tunable CURVE_ROUND_GPUS via sbatch gres (8 withdrawn: snapshot-incompatible)
+  vllm_replicas: 4             # derived = gpus (config.sh)
+  vllm_max_num_seqs: 10        # derived = ceil(total_solution_rollouts / replicas), floor 6
+  rollout_timeout_s: 10800     # fixed: CURVE_ROLLOUT_TIMEOUT
+  llm_timeout_s: 1800          # fixed: CURVE_LLM_TIMEOUT
+  eval_timeout_s: 420          # fixed: CURVE_EVAL_TIMEOUT
+
+driver:                        # supervisor knobs (read at driver START, restart to change)
+  round8: false                # tunable DRIVER_ROUND8 (8-GPU round profile; 0 = 4-GPU proven path)
+  max_resubmits: 3             # tunable DRIVER_MAX_RESUBMITS
+  train_budgets: [18000, 14000, 12000, 12000]   # fixed: drive_cp_curve.sh TRAIN_BUDGETS
+  chain_lookahead: full        # fixed: AUTORESUME-003 (all steps queued upfront via afterok)

@@ -1,0 +1,20 @@
+# Causal H1-credit template for AC2. Each candidate executor rollout is paired
+# with the incoming parent H2 under the same decode seed, task/program, model,
+# evaluator budget, and timeout. Proposer reward is candidate_score-control_score.
+protocol: sah
+task: eft__math__second_autocorr_ineq
+rounds: 12
+round_base: 9000
+
+sampling:
+  K: 8
+  mode: parallel
+  max_evals: 2
+  eval_timeout: 180
+  force_tool_frac: 0.25
+
+reward:
+  impl: paired
+  sharpen_alpha: 0.3
+  min_paired_effect: 0.0
+  paired_repeats: 3

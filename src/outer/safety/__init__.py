@@ -1,0 +1,1 @@
+"""Fail-closed safety surfaces: AST gates for generated code (static_gates), anti-leak/anti-injection text guards (leak_guard), H1 tool-argument guard (tool_schema_guard), and the reviewer self-test sandbox (reviewer/)."""

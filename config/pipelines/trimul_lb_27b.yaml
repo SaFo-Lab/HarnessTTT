@@ -1,0 +1,30 @@
+# HarnessTTT lineage: the GPU MODE trimul kernel under the leaderboard-protocol evaluator (task gpu_mode__trimul_lb:
+# 18 correctness tests, fresh inputs + re-check per timed call, geometric mean over 7 benchmark cases; torch 2.7.1 / triton 3.3.1).
+# Proposer AND frozen executor = Qwen3.8-27B served with TP=2.      python3 src/pipeline.py config/pipelines/trimul_lb_27b.yaml
+# Round job: 8 GPUs = 3 vLLM replicas x TP2 + 2 evaluator GPUs (one evaluation per evaluator GPU at a time keeps timings comparable).
+# Seed = the task's initial program (the TTT-discover trimul kernel with the mask fix).
+campaign: trimul_lb_27b
+name: trimul27b_lb_ttt
+task: trimul_lb
+model_path: /path/to/model_weights/base/Qwen3.8-27B   # HF snapshot dir of the 27B base; without it SAH_MODEL_PATH (the 9B) is used
+served_model: qwen3.8-27b
+vllm_tp: 2
+max_model_len: 131072   # the frozen H2 agent has no context trimming; an 18k-char kernel rewrite overflows 81920 within 20 evaluations
+round_gpus: 8
+eval_gpus: 2
+adv: v3
+k: 32
+train_gpus: 8
+max_round: 15
+h1_seed: 7311
+max_evals: 20
+eval_timeout: 1500      # a cold Triton autotune of a large kernel can take ~600 s; the ratchet caps adopted programs at 0.8 x this
+token_budget: 18000
+lr: 1e-5
+kl: 0.1
+over_cap_as_invalid: true
+round_time: "04:00:00"
+train_time: "04:00:00"
+poll_seconds: 60
+heartbeat_minutes: 10
+freeze: true

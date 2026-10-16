@@ -1,0 +1,50 @@
+type: tool
+name: repair_component
+description: >-
+  Repair one rolled-back upsert_skill, upsert_tool, or upsert_middleware attempt without
+  resending its complete implementation and contract. The runtime retains all
+  transaction surfaces. Prefer replacement_text for a complete corrected text
+  surface or replacement_schema for a complete corrected input schema; exact
+  old_text/new_text remains available for small patches. The original atomic
+  transaction is rerun and commits only if full validation succeeds.
+input_schema:
+  type: object
+  properties:
+    kind:
+      type: string
+      enum: [skill, tool, middleware]
+      description: Kind of the retained failed component.
+    name:
+      type: string
+      description: Exact component name used by the failed atomic upsert.
+    surface:
+      type: string
+      enum:
+        - implementation
+        - body
+        - description
+        - usage_guidance
+        - input_schema
+        - failure_mode
+        - hypothesis
+        - expected_behavior_change
+        - novelty_basis
+        - risk
+      default: implementation
+      description: Retained component surface containing the exact patch.
+    old_text:
+      type: string
+      description: Optional exact fragment that occurs once in the retained surface.
+    new_text:
+      type: string
+      maxLength: 6000
+      description: Replacement fragment for exact-patch mode.
+    replacement_text:
+      type: string
+      maxLength: 40000
+      description: Complete corrected value for a text surface; preferred over exact patching.
+    replacement_schema:
+      type: object
+      description: Complete corrected JSON Schema object when surface is input_schema.
+  required: [kind, name]
+  additionalProperties: false

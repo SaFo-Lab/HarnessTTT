@@ -1,0 +1,15 @@
+type: tool
+name: validate_spec
+description: >-
+  Check a draft H2 spec (YAML, fenced or bare) against the h2spec/1.0 schema
+  and the current harness. Returns the list of fields the spec would change,
+  or the exact validation errors (unknown fields, range violations, no-op
+  specs). Free to call — always validate before submit_spec.
+input_schema:
+  type: object
+  properties:
+    spec_yaml:
+      type: string
+      description: The draft spec YAML (only the fields you change).
+  required: [spec_yaml]
+  additionalProperties: false

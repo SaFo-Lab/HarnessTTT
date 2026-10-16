@@ -1,0 +1,11 @@
+type: tool
+name: validate_harness
+description: >-
+  Validate the current private H2 filesystem. It checks file/mount inheritance,
+  prompt component visibility, schema bounds, generated code shape, orphan or
+  missing files, and canonical compilation. Always call this after edits and
+  before submit_harness.
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false

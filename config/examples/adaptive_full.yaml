@@ -1,0 +1,39 @@
+# Adaptive-ported features all ON, on top of sah v3. Use this to A/B against
+# sah_v3_deep.yaml on a stuck task (e.g. AC1) — same task, disjoint round range.
+protocol: adaptive_v1
+task: eft__math__first_autocorr_ineq
+rounds: 12
+round_base: 900          # disjoint from the sah run so both can run at once
+
+sampling:
+  K: 8
+  mode: sequential       # later samples see prior valid actions
+  max_evals: 30
+  eval_timeout: 300
+  force_tool_frac: 0.25
+
+reward:
+  impl: v3               # keep v3 rescue; anchored-credit is a future reward.impl
+  hist_lambda: 0.3
+
+analysis:
+  enabled: true          # two read-only sub-agents produce a bounded brief
+  performance_analyzer: true
+  design_analyzer: true
+  brief_token_cap: 6000
+  dossier_char_cap: 18000
+
+sequential:
+  enabled: true
+  share_valid_actions: true
+  max_shared: 6
+
+leakage_guard:
+  champion_isolation: true
+  neutralize_claim_words: true
+  scrub_leak_markers: true
+
+training:
+  kl_coef: 0.05
+  num_epoch: 3
+  plateau_rounds: 3      # commit only on a confirmed 3-round plateau

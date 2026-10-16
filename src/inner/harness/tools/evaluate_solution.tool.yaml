@@ -1,0 +1,12 @@
+type: tool
+name: evaluate_solution
+description: >-
+  Run the current program through the task evaluator and report its score.
+  Returns combined_score (higher is better), validity, any error, your best
+  score so far, and how many evaluations remain. Use the feedback to improve the
+  code, then evaluate again. The best-scoring version is kept automatically. Your
+  number of evaluations is limited.
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false

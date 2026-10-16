@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Fake `squeue` over the jobs registered by the fake sbatch in $FAKE_SLURM_DIR (supports -j, -u, -h, -o with %T %M %N %r %j %b %i)."""
+import json, os, sys, time
+from pathlib import Path
+
+STATE = Path(os.environ["FAKE_SLURM_DIR"])
+if (Path(os.environ["FAKE_SLURM_DIR"]) / "DOWN").exists():   # simulated controller/DB outage (OUTAGE-001 tests)
+    print('slurm_load_jobs error: Socket timed out on send/recv operation', file=sys.stderr); sys.exit(1)
+args = sys.argv[1:]
+jid = args[args.index("-j") + 1] if "-j" in args else None
+fmt = args[args.index("-o") + 1] if "-o" in args else "%i %T"
+jobs = []
+for p in sorted(STATE.glob("*.json")):
+    d = json.loads(p.read_text())
+    if jid and d["id"] != jid:
+        continue
+    if d["state"] in ("PENDING", "RUNNING"):
+        jobs.append(d)
+for d in jobs:
+    elapsed = int(time.time() - d["t0"])
+    out = fmt
+    for code, val in (("%T", d["state"]), ("%M", f"{elapsed // 60}:{elapsed % 60:02d}"), ("%N", "fakenode" if d["state"] == "RUNNING" else ""),
+                      ("%r", "None" if d["state"] == "RUNNING" else "Priority"), ("%j", d["name"]), ("%b", f"gres/gpu:{d['gpus']}"), ("%i", d["id"])):
+        out = out.replace(code, val)
+    print(out)

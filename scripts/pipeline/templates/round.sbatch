@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# HarnessTTT: one SAH outer round with a (possibly trained) proposer: propose on SAH9B_PROPOSER_MODEL, rollouts on the frozen base.
+#SBATCH --job-name=@@JOBNAME@@
+#SBATCH --account=@@ACCOUNT@@
+#SBATCH --partition=@@PARTITION@@
+#SBATCH --qos=@@QOS@@
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:@@GPUS@@
+#SBATCH --cpus-per-task=@@CPUS@@
+#SBATCH --mem=@@MEM@@
+#SBATCH --time=@@TIME@@
+#SBATCH --no-requeue
+#SBATCH --signal=TERM@900
+#SBATCH --output=@@RUN@@/out/slurm-%j.out
+#SBATCH --error=@@RUN@@/out/slurm-%j.err
+set -euo pipefail
+source @@ENV_FILE@@
+# per-lineage base model (pipeline.py config: model_path / served_model / vllm_tp / max_model_len; defaults = env.sh)
+export SAH_MODEL_PATH=@@MODEL_PATH@@ SAH_SERVED_MODEL=@@SERVED_MODEL@@ SAH9B_VLLM_TP=@@VLLM_TP@@ SAH9B_MAX_MODEL_LEN=@@MAX_MODEL_LEN@@ SAH9B_BASE_MODEL=@@MODEL_PATH@@   # SAH9B_BASE_MODEL: the workers refuse to run if a sourced site file changes SAH_MODEL_PATH (MODELCLOBBER-001)
+# BENCHLOCK-001 reverted 2026-10-01 19:05 (EVALLOCK-002): with the lock held only around the timed benchmarks, the other
+# trajectories' correctness tests and autotuning shared the evaluator GPU - 16 of 32 trajectories lost every evaluation to
+# CUDA OOM, and the UNCHANGED SimpleTES seed re-timed 8% faster (1090 vs 1178 us) than in every single-process measurement,
+# so scores were no longer comparable to the quiet baseline. One evaluation per GPU at a time (the default 'whole' phase)
+# keeps timings consistent; the pruned seed compiles in ~30 s, so the autotune stall that motivated BENCHLOCK-001 is gone.
+export SAH_EVAL_LOCK_PHASE=whole
+export SAH9B_SAH_ROOT=@@SAH_ROOT@@
+export SAH9B_RUN_DIR=@@RUN@@
+export SAH9B_TASKS="@@TASK_ID@@"
+export SAH9B_K=@@K@@ SAH9B_MAX_EVALS=@@MAX_EVALS@@ SAH9B_EVAL_TIMEOUT=@@EVAL_TIMEOUT@@ SAH9B_ROLLOUT_WALL_TIMEOUT=10800 SAH9B_PROPOSE_TIMEOUT=10800
+export SAH9B_ROUND=@@ROUND@@ SAH9B_STALL_MINUTES=45 SAH9B_MAX_ROUND=@@MAX_ROUND@@ SAH9B_BASES_FILE=@@BASES@@ SAH9B_SEED_PROGRAMS_FILE=@@SEED_PROGRAMS@@ SAH9B_PROPOSER_MODEL=@@PROPOSER_MODEL@@
+export CURVE_INHERIT_BEAM=2 CURVE_BEAM_TOL=0.02
+export SAH9B_ROUNDS_PER_JOB=1 SAH9B_JOB_SECONDS=79200 SAH9B_MIN_ROUND_SECONDS=7200
+export SAH_H1_MAX_ITERS=36
+export SAH_BEAM_DEAL=roundrobin SAH_SEMANTIC_DEDUP=rollout
+export SAH_H1_OPERATOR_BRIEF_DIR=@@BRIEF_DIR@@
+export SAH_RATCHET_EVAL_TIME_FRAC=0.8 SAH_RATCHET_EVAL_LIMITS='{"eft__math__hadamard_maximal_det":350}'
+export SAH_OVER_CAP_AS_INVALID=@@OVERCAP@@
+export SAH9B_PROPOSE_PAR=@@K@@ SAH9B_ROLLOUT_PAR=@@K@@ SAH9B_ADV=@@ADV@@ SAH9B_FIXED_SLOTS=0 SAH9B_PROPOSAL_GATE=off SAH9B_H1_SEED=@@H1_SEED@@
+# seed-program swap: per-lineage baseline table (empty = repo config/baseline_h2_20ev.json); GPUs reserved for the evaluator
+export SAH_BASELINE_JSON="@@BASELINE_JSON@@" SAH9B_EVAL_GPUS=@@EVAL_GPUS@@
+[ -n "$SAH_BASELINE_JSON" ] || unset SAH_BASELINE_JSON
+test -r "$SAH_IMAGE"; test -x "$VLLM_ENV/bin/vllm"; test -x "$SAH_AHC_NATIVE_BIN/docker"
+git -C "$SAH9B_SAH_ROOT" diff --quiet --no-ext-diff HEAD --
+test -z "$(git -C "$SAH9B_SAH_ROOT" ls-files --others --exclude-standard)"
+srun --nodes=1 --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" \
+  --container-image="$SAH_IMAGE" \
+  --container-mounts="@@CONTAINER_MOUNTS@@" \
+  --no-container-mount-home \
+  --container-workdir="$SAH9B_SAH_ROOT" \
+  /bin/bash @@PIPELINE_DIR@@/worker_round.sh || echo "[sbatch] srun exit $? $(date -Is)"
+@@EPILOGUE@@

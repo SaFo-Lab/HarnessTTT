@@ -1,0 +1,50 @@
+type: tool
+name: upsert_skill
+description: >-
+  Preferred skill-authoring transaction. Supply only the semantic playbook and
+  its causal contract. The framework writes canonical YAML frontmatter, mounts
+  the skill in agent.yaml, creates its canonical prompt declaration, validates
+  the complete H2, and commits all surfaces atomically. Markdown code fences in
+  the body are ordinary skill content. Do not include frontmatter or edit mount
+  plumbing yourself.
+input_schema:
+  type: object
+  properties:
+    name:
+      type: string
+      description: Stable kebab-case skill name.
+    body:
+      type: string
+      description: Complete Markdown playbook body without YAML frontmatter, at most 8000 chars.
+    description:
+      type: string
+      description: Concise executor-facing skill description, at most 600 chars.
+    usage_guidance:
+      type: string
+      description: Observable condition under which the executor should apply this playbook.
+    failure_mode:
+      type: string
+      description: Specific executor failure observed or predicted, at most 800 chars.
+    hypothesis:
+      type: string
+      description: Why this playbook should address that failure, at most 800 chars.
+    expected_behavior_change:
+      type: string
+      description: Concrete future executor behavior expected to change, at most 800 chars.
+    novelty_basis:
+      type: string
+      description: Difference from inherited skills and prompt guidance, at most 800 chars.
+    risk:
+      type: string
+      description: Main anchoring, overconstraint, or context-cost risk, at most 800 chars.
+  required:
+    - name
+    - body
+    - description
+    - usage_guidance
+    - failure_mode
+    - hypothesis
+    - expected_behavior_change
+    - novelty_basis
+    - risk
+  additionalProperties: false

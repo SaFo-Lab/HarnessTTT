@@ -1,0 +1,26 @@
+{
+  "eft__math__hadamard_maximal_det": {
+    "package": "/path/to/runs/hadamard_v3/rounds/round008/tasks/eft__math__hadamard_maximal_det/cand00",
+    "score": 0.8109639778551038,
+    "seed_score": 0.14327485380116958,
+    "from": "unchanged",
+    "beam": [
+      {
+        "package": "/path/to/runs/hadamard_v3/rounds/round008/tasks/eft__math__hadamard_maximal_det/cand00",
+        "score": 0.8109639778551038,
+        "from": "incumbent"
+      },
+      {
+        "package": "/path/to/runs/hadamard_v3/rounds/round014/tasks/eft__math__hadamard_maximal_det/cand00",
+        "score": 0.8109639778551038,
+        "from": "round014/cand00",
+        "has_component": true
+      }
+    ],
+    "beam_policy": {
+      "width": 2,
+      "tolerance": 0.02,
+      "rule": "head=promoted/retained; then best component-carrying candidate within tolerance; then by score"
+    }
+  }
+}

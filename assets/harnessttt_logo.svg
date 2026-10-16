@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 230" width="900" height="230" role="img" aria-label="HarnessTTT: learn the harness, not the weights">
+  <!-- flat wordmark on a light panel so it reads on light and dark GitHub themes; accent navy #15258c, ink #1f1f1f -->
+  <rect x="2" y="2" width="896" height="226" rx="22" fill="#ffffff" stroke="#15258c" stroke-width="3"/>
+  <!-- mark: a frozen executor block, the harness wrapped around it, the proposer's edit as an arrow -->
+  <g transform="translate(58,52)">
+    <rect x="0" y="0" width="126" height="126" rx="18" fill="none" stroke="#15258c" stroke-width="7"/>
+    <rect x="31" y="31" width="64" height="64" rx="10" fill="#1f1f1f"/>
+    <path d="M 63 -26 L 63 -8" stroke="#15258c" stroke-width="7" stroke-linecap="round"/>
+    <path d="M 48 -14 L 63 -2 L 78 -14" fill="none" stroke="#15258c" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="228" y="118" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="92" font-weight="700" letter-spacing="-2" fill="#1f1f1f">Harness<tspan fill="#15258c">TTT</tspan></text>
+  <text x="232" y="172" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="400" fill="#1f1f1f">Learn the harness, not the weights</text>
+</svg>

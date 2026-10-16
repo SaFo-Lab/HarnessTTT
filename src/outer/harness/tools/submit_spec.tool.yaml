@@ -1,0 +1,14 @@
+type: tool
+name: submit_spec
+description: >-
+  Submit your final candidate H2 spec (YAML, fenced or bare). Ends the session.
+  An invalid or unchanged submission scores the minimum reward — call this only
+  after validate_spec reports the spec valid.
+input_schema:
+  type: object
+  properties:
+    spec_yaml:
+      type: string
+      description: The final spec YAML (only the fields you change).
+  required: [spec_yaml]
+  additionalProperties: false

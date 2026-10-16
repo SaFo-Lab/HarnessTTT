@@ -1,0 +1,32 @@
+diff --git a/nexau/archs/llm/llm_config.py b/nexau/archs/llm/llm_config.py
+index 6ee6faa..12d04e6 100644
+--- a/nexau/archs/llm/llm_config.py
++++ b/nexau/archs/llm/llm_config.py
+@@ -220,5 +220,9 @@ class LLMConfig:
+             kwargs["api_key"] = self.api_key
+         if self.base_url:
+             kwargs["base_url"] = self.base_url
+-        if self.max_retries:
++        # ``0`` is meaningful to the OpenAI SDK: it disables the SDK's own
++        # transport retry loop.  Omitting the key for zero silently restores
++        # the SDK default retries and can duplicate a request whose server-side
++        # generation is still running after a client timeout.
++        if self.max_retries is not None:
+             kwargs["max_retries"] = self.max_retries
+@@ -230,7 +234,15 @@ class LLMConfig:
+         kwargs["timeout"] = _httpx.Timeout(
+             timeout=total,
+             connect=connect,
+             read=read,
+         )
+-
++
++        # Local high-concurrency inference can interleave long CPU tool calls
++        # with short HTTP requests.  Opting out of pooled connection reuse
++        # avoids a race where httpx selects a socket just as the ASGI server
++        # closes it.  This is deliberately an environment-scoped transport
++        # policy: it does not retry or duplicate a provider generation.
++        if os.getenv("NEXAU_HTTP_CONNECTION_CLOSE") == "1":
++            kwargs["default_headers"] = {"Connection": "close"}
++
+         return kwargs

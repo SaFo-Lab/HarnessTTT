@@ -1,0 +1,11 @@
+name: probe_solution
+description: >
+  Cheaply score the CURRENT program on SUBSAMPLED data (first ~2000 rows of any
+  dataset). Fast and does NOT consume the evaluation budget, but the score is
+  approximate and NOT comparable to full evaluate_solution scores — use probes
+  to rank your own variants when full evaluation is slow, then confirm the best
+  one with evaluate_solution.
+input_schema:
+  type: object
+  properties: {}
+  required: []

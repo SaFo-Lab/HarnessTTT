@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""Fake `sacct -n -X -j JID -o State|NodeList|Elapsed` over the fake sbatch registry."""
+import json, os, sys
+from pathlib import Path
+
+if (Path(os.environ["FAKE_SLURM_DIR"]) / "DOWN").exists() or (Path(os.environ["FAKE_SLURM_DIR"]) / "DOWN_DB").exists():
+    # simulated controller outage (DOWN) or accounting-DB-only outage (DOWN_DB) for the OUTAGE-001 tests
+    print('sacct: error: Problem talking to the database: Connection timed out', file=sys.stderr); sys.exit(1)
+args = sys.argv[1:]
+jid = args[args.index("-j") + 1] if "-j" in args else None
+p = Path(os.environ["FAKE_SLURM_DIR"]) / f"{jid}.json"
+field = args[args.index("-o") + 1] if "-o" in args else "State"
+if not p.is_file():
+    print("UNKNOWN")
+elif field == "NodeList":
+    print("fakenode")
+elif field == "Elapsed":
+    import time
+    e = int(time.time() - json.loads(p.read_text())["t0"])
+    print(f"{e // 3600:02d}:{e % 3600 // 60:02d}:{e % 60:02d}")
+else:
+    print(json.loads(p.read_text())["state"])

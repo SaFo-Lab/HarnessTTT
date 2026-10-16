@@ -1,0 +1,88 @@
+type: agent
+name: inner_h2_discovery
+description: >-
+  H2 — the fixed inner discovery harness. Drives a frozen executor (M0,
+  Qwen3.5-9B) through an iterative edit->evaluate loop over one EFT discovery
+  task under a strict evaluation budget. This whole file (prompt + tools +
+  skills + middlewares + sampling) is the harness surface the outer proposer
+  will later mutate.
+max_context_tokens: 131072
+system_prompt: ./system.md
+system_prompt_type: file
+tool_call_mode: structured
+max_iterations: 36
+retry_attempts: 2
+retry_backoff_max_seconds: 30
+timeout: 600
+
+# NOTE: llm_config is a placeholder; harness_runner.py overrides model/base_url/
+# api_key/sampling at runtime from the LLMEndpoint (M0 stays frozen; only the
+# serving endpoint is injected).
+llm_config:
+  model: qwen3.5-9b
+  base_url: http://127.0.0.1:8800/v1
+  api_key: EMPTY
+  api_type: openai_chat_completion
+  max_tokens: 8192
+  temperature: 0.7
+  top_p: 0.95
+  # NexAU's LLMConfig captures unknown YAML keys directly into
+  # llm_config.extra_params.  Therefore extra_body must be a direct key here;
+  # nesting it under an extra_params key would forward the literal unsupported
+  # keyword `extra_params` to OpenAI Completions.create().
+  extra_body:
+    top_k: 20
+  stream: false
+
+sandbox_config:
+  type: local
+  work_dir: /tmp
+
+tools:
+  - name: edit_solution
+    yaml_path: ./tools/edit_solution.tool.yaml
+    binding: inner.harness.tools.discovery:edit_solution
+  - name: evaluate_solution
+    yaml_path: ./tools/evaluate_solution.tool.yaml
+    binding: inner.harness.tools.discovery:evaluate_solution
+  - name: probe_solution
+    yaml_path: ./tools/probe_solution.tool.yaml
+    binding: inner.harness.tools.discovery:probe_solution
+  - name: finish
+    yaml_path: ./tools/finish.tool.yaml
+    binding: inner.harness.tools.discovery:finish
+
+stop_tools: [finish]
+
+skills:
+  - ./skills/discovery-optimization
+
+middlewares:
+  # custom: remind the model of its remaining evaluation budget
+  - import: inner.harness.middleware.budget_reminder:BudgetReminderMiddleware
+    params:
+      remind_from_left: 3
+  # built-in: keep long evaluator feedback readable
+  - import: inner.harness.middleware.stall_restart:StallRestartMiddleware
+    params:
+      stall_after: 8
+      max_restarts: 2
+  - import: nexau.archs.main_sub.execution.middleware.long_tool_output:LongToolOutputMiddleware
+    params:
+      max_output_chars: 8000
+      head_lines: 40
+      tail_lines: 20
+      head_chars: 4000
+      tail_chars: 4000
+      bypass_tool_names: [finish, LoadSkill]
+  # built-in: round/token pacing reminder
+  - import: nexau.archs.main_sub.execution.middleware.round_and_token_reminder:RoundAndTokenReminderMiddleware
+    params:
+      max_context_tokens: 131072
+      desired_max_tokens: 8192
+  # immutable accounting: provider usage or explicit unknown, never fake zero
+  - import: inner.runtime.token_ledger:LLMUsageLedgerMiddleware
+    params: {}
+
+tracers:
+  - import: nexau.archs.tracer.adapters.in_memory:InMemoryTracer

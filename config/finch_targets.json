@@ -1,0 +1,111 @@
+{
+  "what": "Per-task Finch-9B scores converted into OUR combined_score scale \u2014 the campaign targets. combined_score conversions derived from each evaluator's formula and our measured (raw, combined) pairs. || 2026-07-24: SOTA(<=10B) targets added from maintable.tex (sota_combined); campaign re-targeted from Finch to SOTA. Txn SOTA* used an uncorrected evaluator (caveat).",
+  "conversions": {
+    "erdos": "combined = BENCH/c5, BENCH = 0.834277 * 0.456591 = 0.380922 ; Finch c5 = 0.381100 -> target 0.999533",
+    "ac1": "combined = BENCH/c1, BENCH = 0.991469 * 1.518245 = 1.505293 ; Finch c1 = 1.514100 -> target 0.994183",
+    "ac2": "combined = c2/BENCH, BENCH = 0.896091 / 0.999789 = 0.896280 ; Finch c2 = 0.912200 -> target 1.017762",
+    "cp": "combined = sum_radii / 2.635 ; Finch sum = 1.936000 -> target 0.734725",
+    "hadamard": "combined = det_ratio ; Finch = 0.480585",
+    "others": "combined_score IS the table value (eplb, prism, llm_sql, txn)"
+  },
+  "targets": {
+    "eft__math__circle_packing": {
+      "finch_combined": 0.734725,
+      "current_best": 0.800716,
+      "status": "ACHIEVED",
+      "note": "round026 cascade = 0.800716 (sum_radii 2.1099, +8.8%); SOTA 2.635983 gap 20%. Finch long broken.",
+      "sota_combined": 1.000373,
+      "sota_status": "pending"
+    },
+    "eft__math__hadamard_maximal_det": {
+      "finch_combined": 0.480585,
+      "current_best": 0.558109,
+      "status": "ACHIEVED",
+      "note": "0.558109 plateau: r37 cascade flat, r39 crossover(+stall-restart) flat 8/8. Post-jump local optimum; next jump likely needs executor capability, not harness. SOTA 0.5764 gap 3.2%.",
+      "sota_combined": 0.5764,
+      "sota_status": "plateaued"
+    },
+    "eft__math__erdos_min_overlap": {
+      "finch_combined": 0.999533,
+      "current_best": 0.99964,
+      "status": "ACHIEVED",
+      "note": "round060/cand07 = 0.999640 > Finch 0.999533 (c5 0.381059 < 0.381100). Broken by intelligence-guided round (grid-choice + minimax-softening analyst note) after 7 blind visits failed \u2014 sprint iter 1. SOTA 0.999974 still open.",
+      "sota_combined": 0.999974,
+      "sota_status": "parked_executor_limited"
+    },
+    "eft__math__first_autocorr_ineq": {
+      "finch_combined": 0.994183,
+      "current_best": 0.994521,
+      "status": "ACHIEVED",
+      "note": "round021/cand01 = 0.994195 > Finch 0.994183 at 7 evals (STILL CLIMBING). First live win of algo-v2 (gap-normalized RLOO+max advantages) + H1 feedback telemetry. c1 1.514082 < Finch 1.514100.",
+      "sota_combined": 1.001437,
+      "sota_status": "pending"
+    },
+    "eft__math__second_autocorr_ineq": {
+      "finch_combined": 1.017762,
+      "current_best": 1.025431,
+      "status": "ACHIEVED",
+      "note": "round020/cand04 = 1.025431 >> Finch 1.017762 (+0.75%); c2 0.919075 > 0.912200. cand06 1.017994 also above.",
+      "sota_combined": 1.056478,
+      "sota_status": "pending"
+    },
+    "adrs__eplb": {
+      "finch_combined": 0.1265,
+      "current_best": 0.1266,
+      "status": "achieved_baseline",
+      "note": "baseline H2 already >= Finch (marginal)",
+      "sota_combined": 0.127,
+      "sota_status": "pending"
+    },
+    "adrs__prism": {
+      "finch_combined": 23.93,
+      "current_best": 25.5943,
+      "status": "achieved_baseline",
+      "sota_combined": 24.7,
+      "sota_status": "ACHIEVED",
+      "note": "round031 final best 25.5943 > SOTA 24.70 (+3.6%); first-visit cascade SOTA break."
+    },
+    "adrs__llm_sql": {
+      "finch_combined": 0.7024,
+      "current_best": 0.727833,
+      "status": "ACHIEVED",
+      "note": "round057/cand05 = 0.727833 > Finch 0.7024 (4 evals). Chain: eval-timeout unlock (r27 escape) -> analyst recipe from benchmark's shipped solver, offline-validated 0.728 -> injected as crossover parent in the task message -> M0 adopted verbatim through the official pipeline. Provenance documented.",
+      "sota_combined": 0.7341,
+      "sota_status": "plateaued"
+    },
+    "adrs__txn_scheduling": {
+      "finch_combined": 3636.36,
+      "current_best": 4184.1,
+      "status": "ACHIEVED",
+      "note": "round025 cascade cand04 = 4184.10 (+10.5% over 3787.88); SOTA* 4761.90 gap 12.1% (SOTA used uncorrected evaluator). Finch long broken.",
+      "sota_combined": 4761.9,
+      "sota_status": "pending"
+    },
+    "eft__ahc_simpletes__ahc039": {
+      "finch_combined": 2.461151,
+      "current_best": 2.476554,
+      "status": "ACHIEVED",
+      "note": "baseline v2 (native ARM testers): 2.476554 -> raw sum 557,224 > Finch 553,759 > official Qwen 553,582. BROKEN AT BASELINE."
+    },
+    "eft__ahc_simpletes__ahc058": {
+      "finch_combined": 1.167304,
+      "current_best": 1.234252,
+      "status": "ACHIEVED",
+      "note": "FINAL r95 = 1.234252 -> sum 555,413,000 > Finch 525,286,896 (+5.7%). Sprint: 0.299->0.455->1.234 in 2 rounds."
+    }
+  },
+  "excluded": {
+    "ahc039/ahc058": "x86 tester blocked on aarch64 (see maintable)",
+    "convolve2d/psd": "no Finch-9B column; not campaign targets"
+  },
+  "campaign_task_order": [
+    "eft__math__circle_packing",
+    "adrs__txn_scheduling",
+    "eft__math__hadamard_maximal_det",
+    "eft__math__erdos_min_overlap",
+    "eft__math__first_autocorr_ineq",
+    "eft__math__second_autocorr_ineq",
+    "adrs__eplb",
+    "adrs__llm_sql"
+  ]
+}
