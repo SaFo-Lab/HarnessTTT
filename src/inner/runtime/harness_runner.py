@@ -41,8 +41,11 @@ class LLMEndpoint:
     max_tokens: int = 8192
     timeout: float = 600.0
     max_retries: int = 2
-    enable_thinking: bool = False  # Qwen3.5: keep outputs clean/fast (matches the earlier runtime)
+    enable_thinking: Optional[bool] = False  # Qwen3.5: keep outputs clean/fast; None = do not send chat_template_kwargs
     seed: Optional[int] = None
+    # vLLM-only request fields (top_k, chat_template_kwargs, ...) travel in extra_body; an OpenAI-compatible API that is
+    # not vLLM rejects unknown fields, so run_baseline --no-vllm-extras sets this False and they are stripped
+    vllm_extras: bool = True
 
 
 @dataclass
@@ -401,6 +404,36 @@ def _initial_message(
     return msg
 
 
+# request fields only vLLM understands (OpenAI's API answers 400 "unrecognized request argument" to them)
+VLLM_ONLY_EXTRA_BODY = ("top_k", "min_p", "repetition_penalty", "chat_template_kwargs", "skip_special_tokens",
+                        "spaces_between_special_tokens", "include_stop_str_in_output", "ignore_eos", "guided_json",
+                        "guided_regex", "guided_choice", "guided_grammar", "length_penalty", "stop_token_ids")
+
+
+def _flatten_extra_params(extra: dict) -> None:
+    """Hoist a nested ``extra_params`` mapping into ``extra`` (in place).
+
+    NexAU keeps every unknown ``llm_config`` key in ``LLMConfig.extra_params`` and spreads that mapping into the
+    chat-completions request.  A package whose agent.yaml spells the vLLM fields as ``llm_config.extra_params.extra_body``
+    (the layout of the released Hugging Face packages) therefore arrives here as ``extra == {"extra_params": {...}}`` and
+    would reach the client as a literal ``extra_params=`` keyword.  The package's own values win over defaults; a nested
+    ``extra_body`` is merged key by key.
+    """
+    nested = extra.pop("extra_params", None)
+    while isinstance(nested, dict):
+        deeper = nested.pop("extra_params", None)
+        for key, value in nested.items():
+            if key == "extra_body" and isinstance(value, dict):
+                body = extra.get("extra_body")
+                if not isinstance(body, dict):
+                    body = extra["extra_body"] = {}
+                for bk, bv in value.items():
+                    body.setdefault(bk, bv)
+            else:
+                extra.setdefault(key, value)
+        nested = deeper
+
+
 def _override_llm(config, ep: LLMEndpoint, *, preserve_sampling: bool = False,
                   top_k_override: Optional[int] = None) -> None:
     """Inject the serving endpoint into the loaded agent config.
@@ -409,6 +442,7 @@ def _override_llm(config, ep: LLMEndpoint, *, preserve_sampling: bool = False,
     (candidate H2 packages own their sampling — it is part of the genome);
     only the endpoint/model/timeouts are injected. top_k_override applies the
     candidate's top_k (which lives outside agent.yaml, in its meta.json).
+    ep.vllm_extras=False strips every vLLM-only request field (see VLLM_ONLY_EXTRA_BODY).
     """
     llm = config.llm_config
     llm.model = ep.model
@@ -437,13 +471,24 @@ def _override_llm(config, ep: LLMEndpoint, *, preserve_sampling: bool = False,
             llm.extra_params = extra
         except Exception:
             return
-    extra_body = extra.setdefault("extra_body", {})
-    top_k = top_k_override if top_k_override is not None else ep.top_k
-    if top_k is not None:
-        extra_body["top_k"] = top_k
-    extra_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = ep.enable_thinking
+    _flatten_extra_params(extra)
+    extra_body = extra.get("extra_body")
+    if not isinstance(extra_body, dict):
+        extra_body = extra["extra_body"] = {}
+    if ep.vllm_extras:
+        top_k = top_k_override if top_k_override is not None else ep.top_k
+        if top_k is not None:
+            extra_body["top_k"] = top_k
+        if ep.enable_thinking is not None:
+            extra_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = ep.enable_thinking
+    else:
+        for key in VLLM_ONLY_EXTRA_BODY:
+            extra_body.pop(key, None)
+            extra.pop(key, None)
     if ep.seed is not None:
         extra_body["seed"] = int(ep.seed)
+    if not extra_body:
+        extra.pop("extra_body", None)
 
 
 def _extract_trajectory(agent) -> List[Dict[str, Any]]:

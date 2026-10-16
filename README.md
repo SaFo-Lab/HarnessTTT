@@ -47,14 +47,16 @@ Executor RL (TTT-Discover) writes reward into the executor's weights. Fixed-prop
 
 ```bash
 git clone https://github.com/SaFo-Lab/Self_Adapt_Harness.git HarnessTTT && cd HarnessTTT
-pip install -e .                                   # packages: harnessttt, inner, outer, trainer (+ pipeline)
+pip install -e .                                   # packages: harnessttt, inner, outer, trainer
+python3 scripts/setup/setup_dataset.py             # task snapshot from pinned public sources (+ --tiers core,gpu for the kernel tasks)
 cp config/local.env.example config/local.env       # site paths: executor checkpoint, container image, envs, RUN_ROOT, Slurm account
 bash scripts/setup/setup_deps.sh                   # NexAU agent runtime (pinned commit + patch) and Megatron-LM
+bash scripts/setup/setup_runtime_env.sh            # Python 3.12 env for the executor runtime (NexAU + evaluator deps)
 bash scripts/setup/setup_slime.sh                  # slime (pinned, patched) — only needed to train the proposer
-bash scripts/setup/preflight.sh                    # checks pins, dataset manifest, QOS, imports
+bash scripts/setup/preflight.sh                    # checks pins, dataset checksums, site settings, imports (--executor-only skips training)
 ```
 
-The task snapshot (`dataset/self_adapt_harness/`, 1.5 GB, git-ignored) holds the task descriptions, seed programs and evaluators; copy it as described in [`dataset/README.md`](dataset/README.md). Python ≥ 3.9 for the package; the executor and training environments used in the paper are Python 3.12 with vLLM 0.17.1 and torch 2.9.1 (`config/dependencies.lock.json`). Operations guide for the full loop: [`docs/pipeline_guide.md`](docs/pipeline_guide.md).
+`setup_dataset.py` builds `dataset/self_adapt_harness/` (git-ignored, ~350 MB for the 11-task protocol) from pinned commits of evolution-fine-tuning, SimpleTES, SkyDiscover and TTT-Discover plus sha256-checked downloads, and verifies every file against `config/dataset/CHECKSUMS.json` ([`dataset/README.md`](dataset/README.md)). Python ≥ 3.9 runs the package (task registry, pipeline driver, `harnessttt` API); running a harness needs the NexAU runtime, which requires **Python 3.12**. The paper's executor and training environments are Python 3.12 with vLLM 0.17.1 and torch 2.9.1 (`config/dependencies.lock.json`). Operations guide for the full loop: [`docs/pipeline_guide.md`](docs/pipeline_guide.md).
 
 ---
 
@@ -83,7 +85,7 @@ result = harnessttt.optimize(
     max_metric_calls=20,                           # evaluator calls per rollout
 )
 
-print("Evolved harness:", result.best_harness_path)   # agent.yaml, prompt.md, skills/, tools/, custom_tools/, middlewares/
+print("Evolved harness:", result.best_harness_path)   # agent.yaml, prompt.md, skills/, tools/, custom_tools/, middlewares/ (the initial harness uses middleware/)
 print("Best score:", result.best_metric, task.metric)  # sum of radii
 result.write_best_program("cp26_best.py")
 ```
@@ -144,11 +146,11 @@ row = harnessttt.run_harness(
 print(row["best_score"], row["out_dir"])
 ```
 
-`run_harness` calls `python -m inner.cli.run_baseline --harness-dir ... --base-url ... --model ...`; the pinned NexAU runtime must be importable (`NEXAU_ROOT` in `config/local.env`, set by `setup_deps.sh`).
+`run_harness` calls `python -m inner.cli.run_baseline --harness-dir ... --base-url ... --model ...` under the pinned NexAU runtime (`NEXAU_ROOT` from `config/local.env`, set by `setup_deps.sh`; Python 3.12). For a hosted API host it adds `--no-vllm-extras`, so vLLM-only sampling fields (`top_k`, `chat_template_kwargs`) are not sent; pass `vllm_extras=True/False` to decide explicitly.
 
 ### Bring your own task
 
-Tasks are registered by files, not by a Python call. A task is a folder with a seed program whose editable region is delimited by `# EVOLVE-BLOCK-START` / `# EVOLVE-BLOCK-END`, an `evaluator.py` that returns `combined_score` (higher is better) and `validity`, and a `config.yaml` whose `prompt.system_message` is the task description. Add a record to `dataset/self_adapt_harness/MANIFEST_eft.json`, rebuild the task-text registry, and give the pipeline an alias in `src/pipeline.py` (`TASK_IDS`, and `DISPLAY` for the native metric):
+Tasks are registered by files, not by a Python call. A task is a folder with a seed program whose editable region is delimited by `# EVOLVE-BLOCK-START` / `# EVOLVE-BLOCK-END`, an `evaluator.py` that returns `combined_score` (higher is better) and `validity`, and a `config.yaml` whose `prompt.system_message` is the task description. Add a record to `config/dataset/MANIFEST_eft.json` (installed into the snapshot by `setup_dataset.py`; or edit `dataset/self_adapt_harness/MANIFEST_eft.json` directly), rebuild the task-text registry, and give the pipeline an alias in `src/pipeline.py` (`TASK_IDS`, and `DISPLAY` for the native metric). Optional record fields: `per_eval_timeout_s`, `python_exe`, `extra_pythonpath`, `env` (paths may use `${VARIABLES}` from `config/local.env`):
 
 ```json
 {"task_id": "eft__math__circle_packing", "rel_path": "raw/eft-aac2e79/benchmarks/math/circle_packing",
@@ -216,7 +218,7 @@ Generated tools are plain Python files with one `run(ctx, args)` entry point; `c
 | scRNA denoising | `eft__bio_simpletes__scrna_denoising` | biology | denoising score | ↑ | yes |
 | Mariner 10, TriMul (SkyDiscover protocol), MLA decode, ZAPBench | `eft__astro_simpletes__mariner_10`, `gpu_mode__trimul`, `gpu_mode__mla_decode`, `eft__zapbench_simpletes__whole_brain_forecasting` | — | — | — | registry only, no paper result |
 
-"In this release" means the task is in the registry (`dataset/self_adapt_harness/MANIFEST_eft.json`) and runs once the task snapshot is copied; sources are pinned upstream commits of evolution-fine-tuning / SkyDiscover, SimpleTES and TTT-Discover (`dataset/README.md`).
+"In this release" means the task is in the registry (`config/dataset/MANIFEST_eft.json`) and runs once `setup_dataset.py` has built the snapshot; sources are pinned upstream commits of evolution-fine-tuning / SkyDiscover, SimpleTES and TTT-Discover (`config/dataset/sources.json`). The astrodynamics, biology and ZAPBench tasks (`--tiers extra`) also need the data their own setup scripts prepare.
 
 ---
 
@@ -252,9 +254,9 @@ Load one with `huggingface_hub.snapshot_download(..., allow_patterns=["harnesses
 
 ## Release Scope
 
-**Included:** the evolve loop (`src/pipeline.py`, Slurm workers and templates in `scripts/pipeline/`); the proposer-side package H1 with its gates (`src/outer/harness`, `src/outer/safety/`: static AST gates, tool-schema guard, sandboxed tool and middleware self-tests, leak guard), rewards, advantages and the strict program ratchet (`src/outer/reward/`, `src/outer/rounds/`); the executor runtime with the initial harness (`src/inner/`); the proposer update (`src/trainer/` plus the slime patch in `scripts/patches/`); contract tests that run the whole loop without GPUs (`pytest scripts/tests`); pinned dependencies (`config/dependencies.lock.json`); example lineage configs (`config/pipelines/`).
+**Included:** the evolve loop (`src/pipeline.py`, Slurm workers and templates in `scripts/pipeline/`); the proposer-side package H1 with its gates (`src/outer/harness`, `src/outer/safety/`: static AST gates, tool-schema guard, sandboxed tool and middleware self-tests, leak guard), rewards, advantages and the strict program ratchet (`src/outer/reward/`, `src/outer/rounds/`); the executor runtime with the initial harness (`src/inner/`); the proposer update (`src/trainer/` plus the slime patch in `scripts/patches/`); contract tests that run the whole loop without GPUs (`pytest scripts/tests`); pinned dependencies (`config/dependencies.lock.json`); the dataset recipe (`config/dataset/`: sources, manifest, overlay, checksums); example lineage configs (`config/pipelines/`).
 
-**Not included:** the task snapshot (`dataset/self_adapt_harness/`, copied separately), the slime and NexAU checkouts (fetched and patched by `scripts/setup/`), model weights, the container image and Python environments (site payloads referenced from `config/local.env`), the campaign run directories and their manifests, and per-task evolved packages (released on Hugging Face instead). Two things the paper describes are not exposed as options here: a no-training *context* mode (the loop always trains the proposer between rounds), and a custom seed harness (`optimize()` starts from `src/inner/harness`).
+**Not included:** the task snapshot payload (`dataset/self_adapt_harness/`, rebuilt from public sources by `scripts/setup/setup_dataset.py`), the slime and NexAU checkouts (fetched and patched by `scripts/setup/`), model weights, the container image and Python environments (site payloads referenced from `config/local.env`), the campaign run directories and their manifests, and per-task evolved packages (released on Hugging Face instead). Two things the paper describes are not exposed as options here: a no-training *context* mode (the loop always trains the proposer between rounds), and a custom seed harness (`optimize()` starts from `src/inner/harness`).
 
 ---
 

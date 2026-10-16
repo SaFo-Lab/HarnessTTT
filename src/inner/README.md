@@ -37,7 +37,7 @@ diff — M0's trained format — or a full EVOLVE-BLOCK rewrite), then
 `evaluate_solution` (subprocess-isolated scoring → `combined_score`, validity,
 error, best-so-far, evals-left), and repeats until budget is spent, then
 `finish`. Reward = best `combined_score`; the seed is scored once as baseline.
-All usage is tracked in an external `BudgetLedger` (plan.md §8.4).
+All usage is tracked in an external `BudgetLedger`.
 
 ## Supporting modules
 

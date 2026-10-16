@@ -25,61 +25,17 @@
    "initial_program_sha256": "856d095dc36c9d1f043a785de94f0a559367247e702293a23b0b4e50f62f7abd",
    "spec_sha256": "81e0ea7b47cbc0cc0c3ba6d2686eb56ba24e9d130d875b0a55c6820717cc7053"
   },
-  "eft__algotune__affine_transform_2d": {
-   "initial_program_sha256": "9db015d1eb81613293aaf70ed84e3943b6af413fbe201b8406b6047d3d86e66f",
-   "spec_sha256": "224106d31f6cfa3c4c8c11c08e97e8163d6e4197bf91af82cdda62f00bd98c81"
+  "eft__astro_simpletes__mariner_10": {
+   "initial_program_sha256": "aabc5f3a1b07da4b80355107935c7e901f5ca81ecb051b92d4fbb727ea1ec604",
+   "spec_sha256": "0d6575a2918674a8a0124d3ef07144ac268d83c69835bfa04f8d99de5ebfdea3"
   },
-  "eft__algotune__convolve2d_full_fill": {
-   "initial_program_sha256": "3f763fe19ec1eed5ac6ab56815079fe40249e68bf3c23c15d8fa74b62eaa8f41",
-   "spec_sha256": "117cd19660b70658440a8de66036675da0f311b6fc81354b460c415f6640680d"
+  "eft__astro_simpletes__voyager_2": {
+   "initial_program_sha256": "aabc5f3a1b07da4b80355107935c7e901f5ca81ecb051b92d4fbb727ea1ec604",
+   "spec_sha256": "21410fe2e7807997e2fbc018376a3aa78ea760ad90187273dcb4d9e20c836ac1"
   },
-  "eft__algotune__eigenvectors_complex": {
-   "initial_program_sha256": "a0f2f5c54b7eebe2336bcc249ce22af77127fc8293d2097d0c8c9d614f3c98d6",
-   "spec_sha256": "1213dceb033b30863a9a8bd23d5b5ccd6131470c71b2b2eefd1caccafa45d30b"
-  },
-  "eft__algotune__fft_cmplx_scipy_fftpack": {
-   "initial_program_sha256": "3b39d71fb1efaea2079074ae9abbf10071b103cbba4d448599425c3828ccd8b4",
-   "spec_sha256": "af4d87bf104ba168d59c8a4e04560c415e580017607e576ad18f0068b20bf6dd"
-  },
-  "eft__algotune__fft_convolution": {
-   "initial_program_sha256": "d52d85d39d2c89c342f1cca19a91c69ddb3d35680fff83e182fd29b99bd1a7f3",
-   "spec_sha256": "04838df8c54d0b9ccd616e967c33ad8775fd0a87e1d1bff1a4591fc7fdb63cf7"
-  },
-  "eft__algotune__lu_factorization": {
-   "initial_program_sha256": "15465cecf84e93641ce94007203fa7f24c7574224d455597879ffb0dd6d2c946",
-   "spec_sha256": "c3715d128d42ef3f7eb54a32b73417b5d3882f3798ee8b133cfdae5358b7c097"
-  },
-  "eft__algotune__polynomial_real": {
-   "initial_program_sha256": "b12ffc7bc09d88108d743536f0aed89d266aa04c24363726fd5d1a360246e1a7",
-   "spec_sha256": "1f23a6276c127f638eba16dd79505a2cef82884e9f92f9a60a2d7e042bcb627f"
-  },
-  "eft__algotune__psd_cone_projection": {
-   "initial_program_sha256": "350b43679851085b01c9f2ca673922e91a2e13e1a6d270b238e09c2ab2e3500b",
-   "spec_sha256": "87fe6674ea9d1d41180931556053541debac2e67724df47d8211a915abe4b869"
-  },
-  "eft__biology__denoising": {
-   "initial_program_sha256": "1c237c600dd82582a60b807961f80d8229269b5ea7fc57bef13b41a6650e69b8",
-   "spec_sha256": "6afbf83ea022dbde764781361031df22478972ea6cc1ec63ea76eb33facb41d6"
-  },
-  "eft__frontier_cs_eval": {
-   "initial_program_sha256": "c01e645bdfc529478bc10083c23177f7128d215096f53b2460b6978e02cef8b3",
-   "spec_sha256": "7c05dd19d89c5177b649931cc72c1eab4c65f667d6a92e4d667376ae89681f1d"
-  },
-  "eft__gpu_mode__grayscale": {
-   "initial_program_sha256": "e673fe726015781e5df2e89c49a59a0b4fc2c4db82ad98a23e47a6af6c2966f0",
-   "spec_sha256": "4316a66cedb76760c6374c08c30d8741518be6b74302626cd66c0fc7c505ae56"
-  },
-  "eft__gpu_mode__mla_decode": {
-   "initial_program_sha256": "42ff5c287cf4d43da888eeca4c8772d33134a3fd31993038b491860ec7b3a23b",
-   "spec_sha256": "c234eb767dc203befdda95de92c07dfbe525f9b855a909c16228d2a31e1305ff"
-  },
-  "eft__gpu_mode__trimul": {
-   "initial_program_sha256": "a3fe80e17628173393441c4ee494274a22920be593d8b3ce0bb96bff14f591a8",
-   "spec_sha256": "b8fc965cabb34f839f82184c4003f9443a17e9e7e897ce6f5613aba1da94d1c5"
-  },
-  "eft__gpu_mode__vecadd": {
-   "initial_program_sha256": "958e7c1b5e82b67a5abf7624a851af098e7c120f4f63edbe3a2359a4df88d8a8",
-   "spec_sha256": "1f90e5ecee33bf1fd935d04c8d4195cd19d781d4cea7df73ca185e46c118d3c4"
+  "eft__bio_simpletes__scrna_denoising": {
+   "initial_program_sha256": "2f38bc429a7ec35af5f0e7f9c511be71e445879d3283a897cc5d71767bf97abf",
+   "spec_sha256": "96a9e50991b3851b7fb4ec9cbc709af99c08e557d4d9b3992deb09d093e816de"
   },
   "eft__math__circle_packing": {
    "initial_program_sha256": "9d87e817e4039a01c79362a133f1f057f315517be98996e27cfd9d90d2189188",
@@ -100,6 +56,10 @@
   "eft__math__second_autocorr_ineq": {
    "initial_program_sha256": "238883e23501ea383d857beb96223b60d00dbbea08fb79b6769811fe9b786250",
    "spec_sha256": "fcb7d2429678bb1eb7d2e6bd5ce584fa8465d30d58512a9d0b6a5b7ec5ed31f2"
+  },
+  "eft__zapbench_simpletes__whole_brain_forecasting": {
+   "initial_program_sha256": "db29cbff3525ac19cfdbb7c0b87dae50b1271b0ca622580fe5fdd4b1ffdd61ce",
+   "spec_sha256": "9d2ba48da350f7f50a77268ed13d0dd20e28f5d04c3cf79f9030ffda8b31f810"
   },
   "gpu_mode__mla_decode": {
    "initial_program_sha256": "b739749ecb8a29f8163c5201cae53626b367133d09dc0249498df73f6653cfbd",

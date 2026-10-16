@@ -1,0 +1,7 @@
+The frozen SkyDiscover evaluators in this 11-task snapshot do not require a
+framework shim. This directory is retained as an explicit PYTHONPATH entry for
+the SAH evaluator contract.
+
+2026-09-28: the GPU-mode kernel tasks (skydiscover benchmarks/gpu_mode, commit 0d932b6) import
+`skydiscover.optimize.evaluation.evaluation_result.EvaluationResult`; a minimal dataclass with that name is provided
+here so the frozen shared_eval.py runs unchanged.

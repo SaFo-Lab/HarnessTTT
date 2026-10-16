@@ -21,7 +21,9 @@ tag=$(basename "$run"); task=$(cat "$run/TASK"); arm=$(cat "$run/ARM"); GPUS=$(c
 H1_SEED=$(cat "$run/H1_SEED" 2>/dev/null || echo 7311); MAXR=${SAH9B_MAX_ROUND:-15}; BRIEF_DIR="${SAH9B_BRIEF_DIR:-$R/briefs_none}"
 log(){ echo "[$(date -Is)] [$tag $phase $N] $*" | tee -a "$run/chain.log"; }
 [ -e "$A/ABL_STOP" ] || [ -e "$run/ABL_STOP" ] && { log "ABL_STOP present: not chaining"; exit 0; }
-case "$task" in cp26) TID=eft__math__circle_packing;; hadamard) TID=eft__math__hadamard_maximal_det;; eft__*) TID=$task;; *) log "unknown task $task"; exit 2;; esac
+case "$task" in cp26) TID=eft__math__circle_packing;; hadamard) TID=eft__math__hadamard_maximal_det;; ac1) TID=eft__math__first_autocorr_ineq;;
+  ac2) TID=eft__math__second_autocorr_ineq;; erdos) TID=eft__math__erdos_min_overlap;; trimul) TID=gpu_mode__trimul;; trimul_lb) TID=gpu_mode__trimul_lb;;
+  mla_decode) TID=gpu_mode__mla_decode;; eft__*|gpu_mode__*|adrs__*) TID=$task;; *) log "unknown task $task"; exit 2;; esac
 case "$arm" in v3|v2|grpo|legacy|anchored) ADV=$arm;; *) log "unknown arm $arm"; exit 2;; esac
 case "$GPUS" in 1) CPUS=12; MEM=100G;; 2) CPUS=24; MEM=200G;; 4) CPUS=48; MEM=300G;; *) CPUS=$((GPUS*12)); MEM=$((GPUS*75))G;; esac
 mkdir -p "$run/out" "$run/gen" "$BRIEF_DIR"
@@ -33,7 +35,8 @@ fill(){ sed -e "s|@@RUN@@|$run|g" -e "s|@@SAH_ROOT@@|$SAH_ROOT|g" -e "s|@@PIPELI
   -e "s|@@TOKEN_BUDGET@@|${SAH9B_TOKEN_BUDGET:-18000}|g" -e "s|@@LR@@|${SAH9B_TRAIN_LR:-1e-5}|g" -e "s|@@KL@@|${SAH9B_TRAIN_KL:-0.1}|g" \
   -e "s|@@ACCOUNT@@|${HTT_SLURM_ACCOUNT:?}|g" -e "s|@@PARTITION@@|${HTT_SLURM_PARTITION:?}|g" -e "s|@@QOS@@|${HTT_SLURM_QOS:?}|g" -e "s|@@CONTAINER_MOUNTS@@|${CONTAINER_MOUNTS:?}|g" \
   -e "s|@@OVERCAP@@|${SAH9B_OVER_CAP_AS_INVALID:-1}|g" -e "s|@@MAX_EVALS@@|${SAH9B_MAX_EVALS:-20}|g" -e "s|@@EVAL_TIMEOUT@@|${SAH9B_EVAL_TIMEOUT:-600}|g" \
-  -e "s|@@TRAIN_GPUS@@|${SAH9B_TRAIN_GPUS:-8}|g" -e "s|@@BASELINE_JSON@@|${SAH9B_BASELINE_JSON:-}|g" -e "s|@@EVAL_GPUS@@|${SAH9B_EVAL_GPUS:-0}|g" \
+  -e "s|@@TRAIN_GPUS@@|${SAH9B_TRAIN_GPUS:-8}|g" -e "s|@@TRAIN_CPUS@@|${SAH9B_TRAIN_CPUS:-32}|g" -e "s|@@TRAIN_MEM@@|${SAH9B_TRAIN_MEM:-0}|g" \
+  -e "s|@@BASELINE_JSON@@|${SAH9B_BASELINE_JSON:-}|g" -e "s|@@EVAL_GPUS@@|${SAH9B_EVAL_GPUS:-0}|g" \
        -e "s|@@MODEL_PATH@@|${SAH_MODEL_PATH}|g" -e "s|@@SERVED_MODEL@@|${SAH_SERVED_MODEL}|g" -e "s|@@VLLM_TP@@|${SAH9B_VLLM_TP:-1}|g" -e "s|@@MAX_MODEL_LEN@@|${SAH9B_MAX_MODEL_LEN:-131072}|g" "$@"; }
 epilogue(){ awk -v epi="$1" '$0=="@@EPILOGUE@@"{print epi; next}{print}'; }   # last template line -> the job-side chain call
 rd=$(printf '%s/rounds/round%03d' "$run" "$N")

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# SimpleTES passes a fractional RLIMIT_CPU (for example --cpu=3.1). The
+# util-linux prlimit in the container image only accepts integral seconds.
+# Round that one option upward; the runner's independent wall timeout remains
+# unchanged.
+set -euo pipefail
+
+translated=()
+for argument in "$@"; do
+  if [[ "$argument" =~ ^--cpu=([0-9]+)\.([0-9]+)$ ]]; then
+    seconds="${BASH_REMATCH[1]}"
+    fraction="${BASH_REMATCH[2]}"
+    if [ "$fraction" -gt 0 ]; then
+      seconds=$((seconds + 1))
+    fi
+    translated+=("--cpu=$seconds")
+  else
+    translated+=("$argument")
+  fi
+done
+exec /usr/bin/prlimit "${translated[@]}"

@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[2]
 FAKE = ROOT / "scripts" / "tests" / "fake_slurm"
 DATASET = ROOT / "dataset" / "self_adapt_harness"
 
+from site_env import ensure_site_env  # noqa: E402
+
+ensure_site_env()
 import harnessttt  # noqa: E402  (conftest puts src/ on sys.path)
 
 
@@ -104,12 +107,35 @@ class RunHarnessArgvTest(unittest.TestCase):
                                            api_key="k", max_evals=20, out_dir="runs/transfer", eval_python="/usr/bin/python3")
         self.assertEqual(argv[:3], [sys.executable, "-m", "inner.cli.run_baseline"])
         for flag, value in (("--ids", "eft__math__circle_packing"), ("--base-url", "https://api.openai.com/v1"), ("--model", "gpt-5.5"),
-                            ("--api-key", "k"), ("--max-evals", "20"), ("--eval-python", "/usr/bin/python3"), ("--out", "runs/transfer"),
+                            ("--api-key", "k"), ("--max-evals", "20"), ("--eval-python", "/usr/bin/python3"), ("--out", str(Path("runs/transfer").resolve())),
                             ("--harness-dir", str(Path("/pkg").resolve()))):
             self.assertIn(flag, argv)
             self.assertEqual(argv[argv.index(flag) + 1], value, flag)
         self.assertIn("--require-trajectory", argv)
-        self.assertNotIn("--harness-dir", harnessttt.run_harness_argv(None, task, base_url="u", model="m"))
+        self.assertNotIn("--harness-dir", harnessttt.run_harness_argv(None, task, base_url="http://localhost:8800/v1", model="m"))
+
+    def test_hosted_apis_get_no_vllm_only_fields_and_local_vllm_keeps_them(self):
+        task = harnessttt.Task(id="t", description="d", initial_program_path=Path("p.py"), evaluator_path=Path("e.py"),
+                               task_dir=Path("."), domain="x")
+        hosted = harnessttt.run_harness_argv(None, task, base_url="https://api.openai.com/v1", model="gpt-5.5")
+        local = harnessttt.run_harness_argv(None, task, base_url="http://127.0.0.1:8800/v1", model="qwen3.5-9b")
+        self.assertIn("--no-vllm-extras", hosted)
+        self.assertNotIn("--no-vllm-extras", local)
+        self.assertNotIn("--no-vllm-extras", harnessttt.run_harness_argv(None, task, base_url="https://api.openai.com/v1", model="m", vllm_extras=True))
+        self.assertTrue(Path(hosted[hosted.index("--out") + 1]).is_absolute())
+
+
+class ServedNameTest(unittest.TestCase):
+    def test_revision_hash_directories_are_served_under_the_model_name(self):
+        from harnessttt.api import _served_name
+        self.assertEqual(_served_name("/models/Qwen3.5-9B/c202236235762e1c871ad0ccb60c8ee5ba337b9a"), "qwen3.5-9b")
+        self.assertEqual(_served_name("/models/Qwen3.5-9B"), "qwen3.5-9b")
+
+
+class LoadTaskErrorTest(unittest.TestCase):
+    def test_unknown_task_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            harnessttt.load_task("no_such_task_xyz")
 
 
 if __name__ == "__main__":

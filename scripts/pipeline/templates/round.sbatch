@@ -17,12 +17,8 @@
 set -euo pipefail
 source @@ENV_FILE@@
 # per-lineage base model (pipeline.py config: model_path / served_model / vllm_tp / max_model_len; defaults = env.sh)
-export SAH_MODEL_PATH=@@MODEL_PATH@@ SAH_SERVED_MODEL=@@SERVED_MODEL@@ SAH9B_VLLM_TP=@@VLLM_TP@@ SAH9B_MAX_MODEL_LEN=@@MAX_MODEL_LEN@@ SAH9B_BASE_MODEL=@@MODEL_PATH@@   # SAH9B_BASE_MODEL: the workers refuse to run if a sourced site file changes SAH_MODEL_PATH (MODELCLOBBER-001)
-# BENCHLOCK-001 reverted 2026-10-01 19:05 (EVALLOCK-002): with the lock held only around the timed benchmarks, the other
-# trajectories' correctness tests and autotuning shared the evaluator GPU - 16 of 32 trajectories lost every evaluation to
-# CUDA OOM, and the UNCHANGED SimpleTES seed re-timed 8% faster (1090 vs 1178 us) than in every single-process measurement,
-# so scores were no longer comparable to the quiet baseline. One evaluation per GPU at a time (the default 'whole' phase)
-# keeps timings consistent; the pruned seed compiles in ~30 s, so the autotune stall that motivated BENCHLOCK-001 is gone.
+export SAH_MODEL_PATH=@@MODEL_PATH@@ SAH_SERVED_MODEL=@@SERVED_MODEL@@ SAH9B_VLLM_TP=@@VLLM_TP@@ SAH9B_MAX_MODEL_LEN=@@MAX_MODEL_LEN@@ SAH9B_BASE_MODEL=@@MODEL_PATH@@   # SAH9B_BASE_MODEL: the workers refuse to run if a sourced site file changes SAH_MODEL_PATH
+# one evaluation per reserved GPU at a time: kernel timings need an idle GPU and must stay comparable to the baseline
 export SAH_EVAL_LOCK_PHASE=whole
 export SAH9B_SAH_ROOT=@@SAH_ROOT@@
 export SAH9B_RUN_DIR=@@RUN@@

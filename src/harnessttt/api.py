@@ -7,24 +7,42 @@
 ``load_task``     returns the registry's view of a task: description, seed program, evaluator, budget hint.
 
 The pipeline is a Slurm loop (round jobs serve the models with vLLM; training jobs update the proposer's LoRA with
-slime).  Site paths come from ``config/env.sh`` + ``config/local.env`` as for the command-line entry point.
+slime).  Site paths come from ``config/env.sh`` + ``config/local.env`` as for the command-line entry point.  The loop
+needs a source checkout of the repository (templates, workers, config): install with ``pip install -e .`` from a clone,
+or point ``HARNESSTTT_ROOT`` at one.
 """
 from __future__ import annotations
 
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
+from urllib.parse import urlsplit
 
-ROOT = Path(__file__).resolve().parents[2]            # the repository (src/harnessttt/api.py -> ROOT)
-SRC = ROOT / "src"
-INITIAL_HARNESS = SRC / "inner" / "harness"            # the initial executor harness (agent.yaml, system.md, skills/, tools/, middleware/)
+import inner
+
 DEFAULT_ROUNDS = 15
+INITIAL_HARNESS = Path(inner.__file__).resolve().parent / "harness"   # the initial executor harness (agent.yaml, system.md, skills/, tools/, middleware/)
 
+
+def _find_root() -> Optional[Path]:
+    """The repository checkout: ``HARNESSTTT_ROOT``, else the tree this file lives in (editable install)."""
+    env = os.environ.get("HARNESSTTT_ROOT")
+    candidates = [Path(env)] if env else []
+    candidates.append(Path(__file__).resolve().parents[2])
+    for root in candidates:
+        if (root / "src" / "pipeline.py").is_file() and (root / "scripts" / "pipeline" / "templates").is_dir():
+            return root.resolve()
+    return None
+
+
+ROOT = _find_root()                                    # None for a non-editable install without HARNESSTTT_ROOT
+SRC = (ROOT / "src") if ROOT else Path(inner.__file__).resolve().parents[1]
 if str(SRC) not in sys.path:                           # the inner/outer/trainer packages and pipeline.py live under src/
     sys.path.insert(0, str(SRC))
 
@@ -33,11 +51,30 @@ def _pipeline():
     """Import ``src/pipeline.py`` (the evolve loop) once, as the tests do."""
     mod = sys.modules.get("pipeline")
     if mod is None:
-        spec = importlib.util.spec_from_file_location("pipeline", SRC / "pipeline.py")
+        if ROOT is None:
+            raise RuntimeError("optimize()/load_task() need a source checkout of HarnessTTT: install with `pip install -e .` "
+                               "from a clone, or set HARNESSTTT_ROOT to the checkout")
+        spec = importlib.util.spec_from_file_location("pipeline", ROOT / "src" / "pipeline.py")
         mod = importlib.util.module_from_spec(spec)
         sys.modules["pipeline"] = mod
         spec.loader.exec_module(mod)
     return mod
+
+
+def _served_name(model_path: Union[str, Path]) -> str:
+    """The name vLLM serves a checkpoint under: the directory name, or its parent's when the leaf is a HF revision hash
+    (``.../Qwen3.5-9B/c2022362...`` -> ``qwen3.5-9b``)."""
+    path = Path(str(model_path))
+    name = path.name
+    if re.fullmatch(r"[0-9a-f]{40}", name) and path.parent.name:
+        name = path.parent.name
+    return name.lower()
+
+
+def _unwrap_exit(exc: BaseException) -> RuntimeError:
+    """The pipeline reports configuration problems with ``SystemExit(message)``; a library call raises instead of exiting."""
+    code = getattr(exc, "code", None)
+    return RuntimeError(str(code) if isinstance(code, str) else f"pipeline stopped with exit code {code}")
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -76,11 +113,22 @@ class Task:
 
 
 def load_task(name: str) -> Task:
-    """``name`` is a pipeline alias (``cp26``, ``hadamard``, ``erdos``, ``ac1``, ``ac2``, ``trimul_lb`` ...) or a full task id."""
+    """``name`` is a pipeline alias (``cp26``, ``hadamard``, ``erdos``, ``ac1``, ``ac2``, ``trimul_lb`` ...) or a full task id.
+
+    Raises ``ValueError`` for an unknown task, with a hint when the dataset snapshot itself is missing
+    (``python3 scripts/setup/setup_dataset.py`` builds it)."""
     p = _pipeline()
-    from inner.tasks.eft_task import get_task
+    from inner.tasks import eft_task
     task_id = p.TASK_IDS.get(name, name)
-    t = get_task(task_id)
+    manifest = eft_task.DATASET_ROOT / "MANIFEST_eft.json"
+    if not manifest.is_file():
+        raise ValueError(f"task snapshot not found: {manifest} (build it with `python3 scripts/setup/setup_dataset.py` or set "
+                         f"SAH_DATASET_ROOT); cannot load task {name!r}")
+    try:
+        t = eft_task.get_task(task_id)
+    except KeyError:
+        known = sorted({*p.TASK_IDS, *(x.task_id for x in eft_task.load_tasks())})
+        raise ValueError(f"unknown task {name!r}; known aliases and ids: {known}") from None
     _kind, _c, unit = p.DISPLAY.get(task_id, ("mul", 1.0, "combined_score"))
     return Task(id=t.task_id, description=t.spec, initial_program_path=Path(t.initial_program_path),
                 evaluator_path=Path(t.evaluator_path), task_dir=Path(t.task_dir), domain=t.domain,
@@ -92,6 +140,8 @@ def load_task(name: str) -> Task:
 # ----------------------------------------------------------------------------------------------------------------------
 @dataclass
 class Result:
+    """What the loop left in its run directory.  With ``rounds_completed == 0`` (dry run, or a loop stopped before its
+    first round collected) the ``best_*`` fields are ``None``."""
     run_dir: Path
     task_id: str
     rounds_completed: int
@@ -157,8 +207,11 @@ def optimize(task: Union[Task, str], *, seed_harness: Union[str, Path] = INITIAL
                          SAME base checkpoint and trains a LoRA on the proposer only, so this must equal ``executor_lm``.
     rounds               outer rounds (``max_round``); proposals_per_round = ``k``; max_metric_calls = evaluator calls per
                          rollout (``max_evals``).
-    pipeline_overrides   any other ``pipeline.Config`` field (``round_gpus``, ``train_gpus``, ``eval_timeout``, ``adv``,
-                         ``job_prefix``, ``run_root``, ``freeze`` ...).
+    pipeline_overrides   any other ``pipeline.Config`` field (``round_gpus``, ``train_gpus``, ``train_mem``, ``eval_timeout``,
+                         ``adv``, ``job_prefix``, ``run_root``, ``freeze`` ...).
+
+    Raises ``RuntimeError`` with the pipeline's message when the site settings are incomplete (``config/local.env``), the
+    tree is dirty under ``freeze=True``, or another runner drives the same run directory.
 
     Notes: this is a Slurm pipeline; a round job uses ``round_gpus`` GPUs (vLLM replicas + evaluator GPUs) and a training
     job ``train_gpus`` GPUs.  ``freeze=True`` (default) runs jobs from an immutable worktree of the committed HEAD, so the
@@ -181,61 +234,95 @@ def optimize(task: Union[Task, str], *, seed_harness: Union[str, Path] = INITIAL
                                 k=int(proposals_per_round), max_round=int(rounds), max_evals=int(max_metric_calls))
     if model_path:
         data["model_path"] = str(model_path)
-        data["served_model"] = served_model or Path(str(model_path)).name.lower()
+        data["served_model"] = served_model or _served_name(model_path)
     elif served_model:
         data["served_model"] = served_model
     data.update({k: v for k, v in pipeline_overrides.items() if v is not None})
-    cfg = p.Config.load(None, data)
-    runner = p.Runner(cfg, quiet=quiet)
-    if dry_run:
-        script = runner.dry_run()
-        return _result(runner, t.id, dry_run_script=Path(script))
-    runner.run_loop()
+    try:
+        cfg = p.Config.load(None, data)
+        runner = p.Runner(cfg, quiet=quiet)
+        if dry_run:
+            script = runner.dry_run()
+            return _result(runner, t.id, dry_run_script=Path(script))
+        runner.run_loop()
+    except SystemExit as exc:
+        raise _unwrap_exit(exc) from None
     return _result(runner, t.id)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
 # run_harness = one harness package on one task with any OpenAI-compatible executor
 # ----------------------------------------------------------------------------------------------------------------------
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"}
+
+
+def _looks_like_vllm(base_url: str) -> bool:
+    """vLLM is what the pipeline serves locally; a hosted API (api.openai.com, ...) rejects vLLM-only request fields."""
+    host = (urlsplit(base_url).hostname or "").lower()
+    return host in _LOCAL_HOSTS or host.endswith(".local") or host.replace(".", "").isdigit() or "." not in host
+
+
 def run_harness_argv(harness_dir: Union[str, Path, None], task: Union[Task, str], *, base_url: str, model: str,
                      api_key: str = "EMPTY", max_evals: int = 20, out_dir: Union[str, Path] = "runs/transfer",
                      eval_python: str = sys.executable, seed_programs_file: Union[str, Path, None] = None,
-                     extra_args: Sequence[str] = ()) -> List[str]:
-    """The ``python -m inner.cli.run_baseline`` command line that ``run_harness`` executes."""
+                     vllm_extras: Optional[bool] = None, extra_args: Sequence[str] = ()) -> List[str]:
+    """The ``python -m inner.cli.run_baseline`` command line that ``run_harness`` executes.
+
+    vllm_extras: send vLLM-only sampling fields (top_k, chat_template_kwargs).  ``None`` = yes for a local/vLLM endpoint,
+    no for a hosted API host (``--no-vllm-extras``)."""
     t = task if isinstance(task, Task) else load_task(task)
+    if vllm_extras is None:
+        vllm_extras = _looks_like_vllm(base_url)
     argv = [sys.executable, "-m", "inner.cli.run_baseline", "--ids", t.id, "--base-url", base_url, "--model", model,
-            "--api-key", api_key, "--max-evals", str(int(max_evals)), "--eval-python", eval_python, "--out", str(out_dir),
-            "--require-trajectory"]
+            "--api-key", api_key, "--max-evals", str(int(max_evals)), "--eval-python", eval_python,
+            "--out", str(Path(out_dir).resolve()), "--require-trajectory"]
     if harness_dir is not None:                       # None = the built-in initial harness
         argv += ["--harness-dir", str(Path(harness_dir).resolve())]
     if seed_programs_file is not None:
-        argv += ["--seed-programs-file", str(seed_programs_file)]
+        argv += ["--seed-programs-file", str(Path(seed_programs_file).resolve())]
+    if not vllm_extras:
+        argv.append("--no-vllm-extras")
     argv += list(extra_args)
     return argv
+
+
+def _nexau_root(env: Dict[str, str]) -> Optional[str]:
+    """``NEXAU_ROOT`` from the process environment, else from config/env.sh + config/local.env (where setup_deps.sh puts it)."""
+    root = env.get("NEXAU_ROOT")
+    if not root and ROOT is not None and (ROOT / "config" / "env.sh").is_file():
+        try:
+            root = _pipeline().load_env(ROOT).get("NEXAU_ROOT")
+        except (SystemExit, subprocess.CalledProcessError):
+            root = None
+    return root if root and Path(root).is_dir() else None
 
 
 def run_harness(harness_dir: Union[str, Path, None], task: Union[Task, str], *, base_url: str, model: str,
                 api_key: str = "EMPTY", max_evals: int = 20, out_dir: Union[str, Path] = "runs/transfer",
                 eval_python: str = sys.executable, seed_programs_file: Union[str, Path, None] = None,
-                extra_args: Sequence[str] = (), env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+                vllm_extras: Optional[bool] = None, extra_args: Sequence[str] = (),
+                env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Run ``harness_dir`` (a package with ``agent.yaml``; ``None`` = the initial harness) on ``task`` with the executor
     served at ``base_url`` (vLLM or any OpenAI-compatible API) and return the run's summary row.
 
-    The executor runtime needs the pinned NexAU checkout importable: set ``NEXAU_ROOT`` (``config/local.env``) or put it on
-    ``PYTHONPATH``.  ``eval_python`` is the interpreter that runs the task's evaluator (numpy/scipy ... for the math tasks).
-    Writes ``<out_dir>/<timestamp>/{summary.json, summary.csv, results/<task>.json, provenance.json}``.
+    The executor runtime needs the pinned NexAU checkout importable (Python 3.12): ``NEXAU_ROOT`` from the environment or
+    ``config/local.env`` (``scripts/setup/setup_deps.sh``), or already on ``PYTHONPATH``.  ``eval_python`` is the interpreter
+    that runs the task's evaluator (numpy/scipy ... for the math tasks).  ``out_dir`` is resolved against the current
+    directory; the run writes ``<out_dir>/<timestamp>/{summary.json, summary.csv, results/<task>.json, provenance.json}``.
     """
+    out_dir = Path(out_dir).resolve()
     argv = run_harness_argv(harness_dir, task, base_url=base_url, model=model, api_key=api_key, max_evals=max_evals,
-                            out_dir=out_dir, eval_python=eval_python, seed_programs_file=seed_programs_file, extra_args=extra_args)
+                            out_dir=out_dir, eval_python=eval_python, seed_programs_file=seed_programs_file,
+                            vllm_extras=vllm_extras, extra_args=extra_args)
     run_env = dict(os.environ)
-    paths = [str(SRC)] + ([run_env["NEXAU_ROOT"]] if run_env.get("NEXAU_ROOT") else []) + \
-            ([run_env["PYTHONPATH"]] if run_env.get("PYTHONPATH") else [])
-    run_env["PYTHONPATH"] = os.pathsep.join(paths)
     if env:
         run_env.update(env)
-    before = {d.name for d in Path(out_dir).glob("*")} if Path(out_dir).is_dir() else set()
-    subprocess.run(argv, check=True, env=run_env, cwd=str(ROOT))
-    new = sorted(d for d in Path(out_dir).glob("*") if d.is_dir() and d.name not in before)
+    nexau = _nexau_root(run_env)
+    paths = [str(SRC)] + ([nexau] if nexau else []) + ([run_env["PYTHONPATH"]] if run_env.get("PYTHONPATH") else [])
+    run_env["PYTHONPATH"] = os.pathsep.join(paths)
+    before = {d.name for d in out_dir.glob("*")} if out_dir.is_dir() else set()
+    subprocess.run(argv, check=True, env=run_env, cwd=str(ROOT) if ROOT else None)
+    new = sorted(d for d in out_dir.glob("*") if d.is_dir() and d.name not in before)
     if not new:
         raise RuntimeError(f"run_baseline left no output under {out_dir}")
     rows = json.loads((new[-1] / "summary.json").read_text())

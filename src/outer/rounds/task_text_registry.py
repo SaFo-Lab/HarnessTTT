@@ -1,7 +1,7 @@
 """Verify live task texts against the pinned registry (anti-tampering).
 
 The curated-note incident entered through an edited task message.  The
-registry (scripts/runtime/build_task_text_registry.py) pins sha256 of every task's
+registry (scripts/tools/build_task_text_registry.py) pins sha256 of every task's
 spec text and initial program from the frozen dataset; each round verifies the
 texts it is about to serve.  Mismatches are recorded always and fatal under
 ``SAH_TASK_TEXT_ENFORCE=1``.

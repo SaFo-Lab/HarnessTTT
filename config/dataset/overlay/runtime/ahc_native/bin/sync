@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# The pinned runner calls bare `sync` after every case. In a container job that
+# would flush every mounted filesystem, including the shared parallel filesystem, and storage
+# latency could be misclassified as candidate TLE. All case outputs and timing
+# profiles live under node-local TMPDIR, so flush only that filesystem.
+set -euo pipefail
+
+if [ "$#" -ne 0 ]; then
+  echo "AHC sync compatibility shim: arguments are not supported" >&2
+  exit 125
+fi
+
+case "${TMPDIR:-}" in
+  /tmp|/tmp/*)
+    exec /usr/bin/sync -f "${TMPDIR}"
+    ;;
+  *)
+    echo "AHC sync compatibility shim: TMPDIR must be under /tmp" >&2
+    exit 125
+    ;;
+esac

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# The pinned AHC runner requests g++-12 by name. The CUDA container image used here
+# provides Ubuntu g++ 11.4 and no GMP linker libraries; keep the runner
+# unchanged and make both compatibility substitutions explicit here. The
+# frozen seed programs do not include or call GMP.
+set -euo pipefail
+
+filtered=()
+for argument in "$@"; do
+  case "$argument" in
+    -lgmp|-lgmpxx)
+      ;;
+    *)
+      filtered+=("$argument")
+      ;;
+  esac
+done
+exec /usr/bin/g++ "${filtered[@]}"

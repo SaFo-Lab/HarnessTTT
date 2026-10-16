@@ -16,7 +16,7 @@ umask 027
 PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 _JOB_BASE_MODEL="${SAH_MODEL_PATH:-}"; _JOB_SERVED_MODEL="${SAH_SERVED_MODEL:-}"
 source "${HARNESSTTT_ENV:-$PIPELINE_DIR/../../config/env.sh}"
-# MODELCLOBBER-001 (2026-10-02): config/local.env used to export SAH_MODEL_PATH unconditionally, so re-sourcing env.sh here replaced
+# MODELCLOBBER-001: config/local.env used to export SAH_MODEL_PATH unconditionally, so re-sourcing env.sh here replaced
 # the lineage's base model (Qwen3.8-27B) with the site default (9B) after the sbatch had exported it: in the first 27B rounds the
 # executor pool, the LoRA base and every trained proposer were the 9B while the baselines ran on the 27B. The job-level value is
 # restored after the source and checked against the explicit contract SAH9B_BASE_MODEL.

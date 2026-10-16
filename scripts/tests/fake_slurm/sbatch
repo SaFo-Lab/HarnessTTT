@@ -3,7 +3,7 @@
 
 Parses the generated sbatch script (job name, gres, `export SAH9B_*` lines), registers a job in $FAKE_SLURM_DIR and spawns a
 detached fake worker that fabricates the artefacts a real round / training job would leave behind, phase by phase (so the
-runner's progress reporting is exercised), from scripts/tests/fixtures/round_hadamard_v3_r14.  Knobs (env):
+runner's progress reporting is exercised), from scripts/tests/fixtures/round_hadamard_r14.  Knobs (env):
   FAKE_STEP_SECONDS   pause between phases (default 0.3)
   FAKE_FAIL_ROUNDS    comma-separated rounds whose FIRST attempt ends without collecting (exercise archive + retry)
   FAKE_ZERO_ADV_ROUNDS rounds whose grpo_batch gets all-zero advantages (exercise the training-skip path)
@@ -13,7 +13,7 @@ import json, os, random, re, shlex, shutil, subprocess, sys, time
 from pathlib import Path
 
 STATE = Path(os.environ["FAKE_SLURM_DIR"])
-FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "round_hadamard_v3_r14"
+FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "round_hadamard_r14"
 STEP = float(os.environ.get("FAKE_STEP_SECONDS", "0.3"))
 
 

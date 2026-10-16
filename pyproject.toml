@@ -7,6 +7,8 @@ name = "harnessttt"
 version = "0.1.0"
 description = "HarnessTTT: learn to optimize the harness of a frozen executor at test time (paper code release)"
 readme = "README.md"
+# the package (task registry, pipeline driver, harnessttt API) runs on 3.9+; running a harness needs the NexAU agent
+# runtime, which requires Python 3.12 (scripts/setup/setup_runtime_env.sh builds that environment)
 requires-python = ">=3.9"
 authors = [
   { name = "Yingzi Ma" }, { name = "Yulong Cao" }, { name = "Nanxi Li" }, { name = "Fang Wu" },
@@ -26,6 +28,7 @@ dependencies = [
   "numpy",
   "scipy",
   "pandas",
+  "psutil",        # SimpleTES evaluators (Hadamard, AHC) measure the candidate's resource use with it
   "jsonschema",
   "openai",
 ]
@@ -47,7 +50,6 @@ Repository = "https://github.com/SaFo-Lab/Self_Adapt_Harness"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-py-modules = ["pipeline"]
 include-package-data = true
 
 [tool.setuptools.packages.find]

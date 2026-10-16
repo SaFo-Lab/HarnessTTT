@@ -1,7 +1,7 @@
 """EFT held-out task registry for the inner (M0 + H2) harness.
 
-Loads the 22 EFT held-out discovery tasks prepared under
-``datasets/self_adapt_harness/`` into a uniform :class:`EFTTask` view the
+Loads the discovery tasks of the dataset snapshot (``dataset/self_adapt_harness/``,
+built by ``scripts/setup/setup_dataset.py``) into a uniform :class:`EFTTask` view the
 harness can drive: seed program, evaluator entry, task prompt, the runtime
 shim needed to import the evaluator, and per-task budget hints.
 
@@ -23,8 +23,7 @@ from typing import Dict, List, Optional
 
 import yaml
 
-# Prepared dataset root.  Override with SAH_DATASET_ROOT so the framework runs
-# outside the machine it was developed on (see datasets README).
+# Prepared dataset root (dataset/README.md).  Override with SAH_DATASET_ROOT to point at a snapshot elsewhere.
 DATASET_ROOT = Path(
     os.environ.get(
         "SAH_DATASET_ROOT",
@@ -55,10 +54,40 @@ class EFTTask:
     # optional interpreter for the evaluator subprocess (manifest field "python_exe"): lets a task pin the exact
     # torch/triton stack its scores must be comparable with (gpu_mode__trimul_lb: torch 2.7 / triton 3.3 like kernelbot)
     python_exe: Optional[str] = None
+    # extra PYTHONPATH entries and environment variables of the evaluator subprocess (manifest fields "extra_pythonpath",
+    # "env"); paths are absolute, relative to the dataset root, or hold ${VARIABLES} that the loader expands
+    extra_pythonpath: List[str] = field(default_factory=list)
+    env: Dict[str, str] = field(default_factory=dict)
 
     @property
     def initial_program(self) -> str:
         return self.initial_program_path.read_text()
+
+
+def _expand(value: Optional[str]) -> Optional[str]:
+    """Expand ``${VAR}`` references in a manifest path; None when a referenced variable is unset (the entry is optional)."""
+    if not value:
+        return None
+    expanded = os.path.expandvars(str(value))
+    if "$" in expanded:
+        return None
+    return expanded
+
+
+def _manifest_paths(values: Optional[List[str]]) -> List[str]:
+    out: List[str] = []
+    for raw in values or []:
+        path = _expand(raw)
+        if path is None:
+            continue
+        if not os.path.isabs(path):
+            path = str(DATASET_ROOT / path)
+        out.append(path)
+    return out
+
+
+def _manifest_env(values: Optional[Dict[str, str]]) -> Dict[str, str]:
+    return {str(k): os.path.expandvars(str(v)) for k, v in (values or {}).items()}
 
 
 # --------------------------------------------------------------------------- #
@@ -82,6 +111,8 @@ def _load_eft_task(rec: Dict, default_timeout: float = 360.0) -> Optional[EFTTas
             max_iter = int(cfg.get("max_iterations", 100))
         except Exception:
             pass
+    if rec.get("per_eval_timeout_s") is not None:   # a manifest record may override the task's config.yaml timeout
+        timeout = float(rec["per_eval_timeout_s"])
     return EFTTask(
         task_id=rec["task_id"],
         source="eft",
@@ -98,7 +129,9 @@ def _load_eft_task(rec: Dict, default_timeout: float = 360.0) -> Optional[EFTTas
         deps=rec.get("deps", []),
         shim_path=EFT_SHIM,
         language=rec.get("language", "python"),
-        python_exe=rec.get("python_exe"),
+        python_exe=_expand(rec.get("python_exe")),
+        extra_pythonpath=_manifest_paths(rec.get("extra_pythonpath")),
+        env=_manifest_env(rec.get("env")),
     )
 
 
@@ -111,22 +144,28 @@ def _load_simpletes_task(cross: Dict) -> Optional[EFTTask]:
     txt = next(iter(task_dir.glob("*.txt")), None)
     if not (ip.exists() and ev.exists() and txt):
         return None
+    is_ahc = "ahc" in cross["task_id"]
+    # the cross-reference record may carry the same optional fields as a task record; the defaults are the
+    # original three SimpleTES tasks (hadamard = construction, ahc = heuristic programming)
     return EFTTask(
         task_id=cross["task_id"],
         source="simpletes",
-        cost_tier="tier2_heavy" if "ahc" in cross["task_id"] else "tier0_cpu_nosetup",
-        plan_family="program_optimization" if "ahc" in cross["task_id"] else "combinatorial_construction",
-        domain="algorithm_engineering" if "ahc" in cross["task_id"] else "combinatorial_construction",
+        cost_tier=cross.get("cost_tier") or ("tier2_heavy" if is_ahc else "tier0_cpu_nosetup"),
+        plan_family=cross.get("plan_family") or ("program_optimization" if is_ahc else "combinatorial_construction"),
+        domain=cross.get("domain") or ("algorithm_engineering" if is_ahc else "combinatorial_construction"),
         task_dir=task_dir,
         initial_program_path=ip,
         evaluator_path=ev,
         spec=txt.read_text(),
-        diff_based=False,  # SimpleTES tasks are single-construction; full-rewrite is safer
-        per_eval_timeout_s=360.0,
-        max_iterations_hint=100,
-        deps=["numpy", "simpletes_pkg"],
+        diff_based=bool(cross.get("diff_based", False)),  # SimpleTES tasks are single-construction; full-rewrite is safer
+        per_eval_timeout_s=float(cross.get("per_eval_timeout_s", 360.0)),
+        max_iterations_hint=int(cross.get("max_iterations_hint", 100)),
+        deps=list(cross.get("deps") or ["numpy", "simpletes_pkg"]),
         shim_path=SIMPLETES_SHIM,
-        language="python",
+        language=cross.get("language", "python"),
+        python_exe=_expand(cross.get("python_exe")),
+        extra_pythonpath=_manifest_paths(cross.get("extra_pythonpath")),
+        env=_manifest_env(cross.get("env")),
     )
 
 

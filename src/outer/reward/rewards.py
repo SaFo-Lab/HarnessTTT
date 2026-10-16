@@ -1,4 +1,4 @@
-"""Rewards + GRPO advantages, instance-wise (plan.md §2.2, §8.3).
+"""Rewards + GRPO advantages, instance-wise.
 
 Per task instance tau, K candidates are generated FOR tau. Legacy/v2/v3 modes
 score them against tau's historical current-best-harness scalar:

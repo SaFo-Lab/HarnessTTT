@@ -1,0 +1,239 @@
+{
+ "schema": "sah-evaluator-manifest/1.0",
+ "created_at": "2026-08-06",
+ "sources": {
+  "evolution-fine-tuning": {
+   "git_sha": "aac2e79be773715ab35b7945f5d9028e46675f02",
+   "url": "https://github.com/Open-Galapagos/evolution-fine-tuning.git",
+   "snapshot_dir": "raw/eft-aac2e79"
+  },
+  "SimpleTES": {
+   "git_sha": "b7e0367b5ab19554fb40859e8069e091bb8c4ca2",
+   "url": "https://github.com/wq-will/SimpleTES.git",
+   "snapshot_dir": "raw/simpletes-b7e0367"
+  },
+  "skydiscover": {
+   "git_sha": "0d932b690670a7e544388ad362e9876c8bd256a0",
+   "added": "2026-09-28",
+   "subset": "benchmarks/gpu_mode/{shared_eval.py,trimul,mla_decode}",
+   "url": "https://github.com/skydiscover-ai/skydiscover.git",
+   "snapshot_dir": "raw/skydiscover-0d932b6"
+  },
+  "ttt-discover": {
+   "git_sha": "6c40e82dab9d5de7416ac873ad5cd3106084aaed",
+   "added": "2026-09-28",
+   "subset": "results/kernel-engineering (initial programs of the GPU tasks)",
+   "url": "https://github.com/test-time-training/discover.git",
+   "snapshot_dir": "raw/ttt-discover-6c40e82"
+  },
+  "SimpleTES-47d3413": {
+   "git_sha": "47d3413da1d85dc24341219d47452d2601e56a57",
+   "url": "https://github.com/wq-will/SimpleTES.git",
+   "snapshot_dir": "raw/simpletes-47d3413",
+   "subset": "datasets/{astrodynamics,open_problems_bio,zapbench} (optional tasks; their data is prepared by their own setup scripts)"
+  }
+ },
+ "tasks": [
+  {
+   "task_id": "eft__math__erdos_min_overlap",
+   "rel_path": "raw/eft-aac2e79/benchmarks/math/erdos_min_overlap",
+   "evaluator_rel": "evaluator/evaluator.py",
+   "initial_program": "initial_program.py",
+   "cost_tier": "tier0_cpu_nosetup",
+   "plan_family": "mathematical_optimization",
+   "domain": "mathematics_extremal_analysis",
+   "deps": [
+    "numpy",
+    "jax",
+    "optax",
+    "tqdm"
+   ],
+   "scorable": true
+  },
+  {
+   "task_id": "eft__math__first_autocorr_ineq",
+   "rel_path": "raw/eft-aac2e79/benchmarks/math/first_autocorr_ineq",
+   "evaluator_rel": "evaluator/evaluator.py",
+   "initial_program": "initial_program.py",
+   "cost_tier": "tier0_cpu_nosetup",
+   "plan_family": "mathematical_optimization",
+   "domain": "mathematics_extremal_analysis",
+   "deps": [
+    "numpy",
+    "jax",
+    "optax"
+   ],
+   "scorable": true
+  },
+  {
+   "task_id": "eft__math__second_autocorr_ineq",
+   "rel_path": "raw/eft-aac2e79/benchmarks/math/second_autocorr_ineq",
+   "evaluator_rel": "evaluator/evaluator.py",
+   "initial_program": "initial_program.py",
+   "cost_tier": "tier0_cpu_nosetup",
+   "plan_family": "mathematical_optimization",
+   "domain": "mathematics_extremal_analysis",
+   "deps": [
+    "numpy",
+    "jax",
+    "optax"
+   ],
+   "scorable": true
+  },
+  {
+   "task_id": "eft__math__circle_packing",
+   "rel_path": "raw/eft-aac2e79/benchmarks/math/circle_packing",
+   "evaluator_rel": "evaluator.py",
+   "initial_program": "initial_program.py",
+   "cost_tier": "tier0_cpu_nosetup",
+   "plan_family": "geometric_construction",
+   "domain": "combinatorial_construction",
+   "deps": [
+    "numpy"
+   ],
+   "scorable": true
+  },
+  {
+   "task_id": "gpu_mode__trimul",
+   "rel_path": "raw/skydiscover-0d932b6/benchmarks/gpu_mode/trimul",
+   "evaluator_rel": "evaluator.py",
+   "initial_program": "initial_program.py",
+   "cost_tier": "tier3_gpu_kernel",
+   "plan_family": "kernel_engineering",
+   "domain": "gpu_kernels_triton",
+   "deps": [
+    "torch",
+    "triton",
+    "cuda_gpu"
+   ],
+   "scorable": true,
+   "note": "skydiscover benchmarks/gpu_mode/trimul (0d932b6) evaluator/reference/config; initial program = TTT-discover trimul.py (6c40e82); skydiscover's own initial program kept as initial_program_skydiscover.py"
+  },
+  {
+   "task_id": "gpu_mode__trimul_lb",
+   "rel_path": "raw/skydiscover-0d932b6/benchmarks/gpu_mode/trimul_lb",
+   "evaluator_rel": "evaluator.py",
+   "initial_program": "initial_program.py",
+   "cost_tier": "tier3_gpu_kernel",
+   "plan_family": "kernel_engineering",
+   "domain": "gpu_kernels_triton",
+   "deps": [
+    "torch",
+    "triton",
+    "cuda_gpu"
+   ],
+   "scorable": true,
+   "note": "TriMul under the GPU MODE leaderboard protocol (kernelbot eval.py leaderboard mode: recheck, 100 repeats, 30 s/case, geometric mean) ported in shared_eval_lb.py from test-time-training/discover@6c40e82; evaluator runs under a torch 2.7.1+cu128 / triton 3.3.1 interpreter like kernelbot's Modal H100 image; initial program = TTT-discover trimul.py (6c40e82) with the mask fix",
+   "python_exe": "${SAH_KERNEL_EVAL_PYTHON}"
+  },
+  {
+   "task_id": "gpu_mode__mla_decode",
+   "rel_path": "raw/skydiscover-0d932b6/benchmarks/gpu_mode/mla_decode",
+   "evaluator_rel": "evaluator.py",
+   "initial_program": "initial_program.py",
+   "cost_tier": "tier3_gpu_kernel",
+   "plan_family": "kernel_engineering",
+   "domain": "gpu_kernels_triton",
+   "deps": [
+    "torch",
+    "triton",
+    "cuda_gpu"
+   ],
+   "scorable": true,
+   "note": "skydiscover benchmarks/gpu_mode/mla_decode (0d932b6) evaluator/reference/config; initial program = TTT-discover mla_code_1.py (6c40e82); skydiscover's own initial program kept as initial_program_skydiscover.py"
+  }
+ ],
+ "cross_referenced_tasks": [
+  {
+   "task_id": "eft__math__hadamard_maximal_det",
+   "use_path": "raw/simpletes-b7e0367/datasets/hadamard_maximal_det/hadamard_maximal_det_29"
+  },
+  {
+   "task_id": "eft__ahc_simpletes__ahc039",
+   "use_path": "raw/simpletes-b7e0367/datasets/ahc/ahc039"
+  },
+  {
+   "task_id": "eft__ahc_simpletes__ahc058",
+   "use_path": "raw/simpletes-b7e0367/datasets/ahc/ahc058"
+  },
+  {
+   "task_id": "eft__astro_simpletes__mariner_10",
+   "use_path": "raw/simpletes-47d3413/datasets/astrodynamics/mariner_10",
+   "cost_tier": "tier0_cpu_nosetup",
+   "plan_family": "program_optimization",
+   "domain": "astrodynamics",
+   "per_eval_timeout_s": 600.0,
+   "deps": [
+    "numpy",
+    "spiceypy",
+    "simpletes_pkg"
+   ],
+   "extra_pythonpath": [
+    "raw/simpletes-47d3413/datasets/astrodynamics",
+    "${SAH_NEWTASK_OVERLAY}"
+   ]
+  },
+  {
+   "task_id": "eft__astro_simpletes__voyager_2",
+   "use_path": "raw/simpletes-47d3413/datasets/astrodynamics/voyager_2",
+   "cost_tier": "tier0_cpu_nosetup",
+   "plan_family": "program_optimization",
+   "domain": "astrodynamics",
+   "per_eval_timeout_s": 600.0,
+   "deps": [
+    "numpy",
+    "spiceypy",
+    "simpletes_pkg"
+   ],
+   "extra_pythonpath": [
+    "raw/simpletes-47d3413/datasets/astrodynamics",
+    "${SAH_NEWTASK_OVERLAY}"
+   ]
+  },
+  {
+   "task_id": "eft__bio_simpletes__scrna_denoising",
+   "use_path": "raw/simpletes-47d3413/datasets/open_problems_bio/denoising",
+   "cost_tier": "tier1_cpu_lightsetup",
+   "plan_family": "program_optimization",
+   "domain": "computational_biology",
+   "per_eval_timeout_s": 900.0,
+   "deps": [
+    "numpy",
+    "anndata",
+    "scanpy",
+    "scprep",
+    "sklearn",
+    "simpletes_pkg"
+   ],
+   "extra_pythonpath": [
+    "${SAH_NEWTASK_OVERLAY}"
+   ],
+   "env": {
+    "EVALUATOR_CONCURRENT_PROCESSES": "1"
+   }
+  },
+  {
+   "task_id": "eft__zapbench_simpletes__whole_brain_forecasting",
+   "use_path": "raw/simpletes-47d3413/datasets/zapbench/whole_brain_forecasting",
+   "cost_tier": "tier2_heavy",
+   "plan_family": "program_optimization",
+   "domain": "scientific_algorithms",
+   "per_eval_timeout_s": 9000.0,
+   "deps": [
+    "numpy",
+    "jax",
+    "torch",
+    "tensorstore",
+    "zapbench",
+    "simpletes_pkg"
+   ],
+   "extra_pythonpath": [
+    "${SAH_NEWTASK_OVERLAY}"
+   ],
+   "env": {
+    "EVALUATOR_CONCURRENT_PROCESSES": "1"
+   }
+  }
+ ],
+ "built_by": "scripts/setup/setup_dataset.py (config/dataset/sources.json); ${VARIABLES} in paths are expanded by inner.tasks.eft_task from the environment (config/local.env) and an unset variable drops the entry"
+}

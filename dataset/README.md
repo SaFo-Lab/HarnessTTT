@@ -1,25 +1,24 @@
 # dataset/
 
-`self_adapt_harness/` is the frozen evaluator snapshot the pipeline runs against (git-ignored payload, 1.5 GB, 889 files).
-Copied on 2026-09-24 from the upstream dataset snapshot (byte-identical, `rsync -rlc`).
-`MANIFEST_eft.json` sha256 and `DATA_PROVENANCE.json` sha256 are recorded in `config/dependencies.lock.json` and checked by
-`scripts/setup/preflight.sh`.
+`self_adapt_harness/` is the task snapshot the pipeline runs against: task texts, seed programs, evaluators and the runtime
+shims.  It is a git-ignored payload built from pinned public sources:
 
-Contents (see `self_adapt_harness/README.md` for the upstream protocol):
+```bash
+python3 scripts/setup/setup_dataset.py                        # core tier: the 11-task protocol (~350 MB, needs git + network)
+python3 scripts/setup/setup_dataset.py --tiers core,gpu       # + GPU MODE kernel tasks (trimul, trimul_lb, mla_decode)
+python3 scripts/setup/setup_dataset.py --tiers core,gpu,extra # + SimpleTES astro / bio / ZAPBench sources
+python3 scripts/setup/setup_dataset.py --verify               # re-check an existing snapshot against config/dataset/CHECKSUMS.json
+python3 scripts/tools/build_task_text_registry.py --check     # the task texts match the pinned registry
+```
 
-- `MANIFEST_eft.json` -- the frozen task protocol (math tasks, ADRS tasks loaded by `inner.tasks.eft_task`, SimpleTES
-  cross-references).  `inner.tasks.eft_task.load_tasks()` yields 15 tasks from this snapshot.
-- `raw/` -- task sources copied from immutable upstream commits: evolution-fine-tuning / SkyDiscover
-  `aac2e79be773715ab35b7945f5d9028e46675f02`, SimpleTES `b7e0367b5ab19554fb40859e8069e091bb8c4ca2`.
-- `heldout/` -- held-out task material.
-- `runtime/` -- import shims (`skydiscover_min`, `simpletes_min`) and `ahc_native/` (the docker/time shim the AHC evaluators
-  expect; `config/env.sh` exports `SAH_AHC_NATIVE_BIN` from here and the round template mounts `.../time` into the container).
-- `DATA_PROVENANCE.json` -- URL, byte count and sha256 of the downloaded EPLB / LLM-SQL payloads.
+The recipe lives in `config/dataset/`: `sources.json` (repositories, commits, subtrees, downloads), `MANIFEST_eft.json`
+(the task protocol installed into the snapshot), `overlay/` (locally authored files: evaluator shims, the AHC compatibility
+commands, the kernel tasks' initial programs and leaderboard-protocol evaluator), `CHECKSUMS.json` (sha256 of every file a
+build produces) and `README.snapshot.md` (installed as the snapshot's README; it documents the layout).
 
-The code finds this directory through `SAH_DATASET_ROOT`, which `config/env.sh` sets to `dataset/self_adapt_harness`
-(the in-code default of `src/inner/tasks/eft_task.py` is the same relative path).
+The code finds the snapshot through `SAH_DATASET_ROOT` (`config/env.sh` sets it to `dataset/self_adapt_harness`; the in-code
+default of `src/inner/tasks/eft_task.py` is the same relative path).  `scripts/setup/preflight.sh` checks the manifest hash
+recorded in `config/dependencies.lock.json`.
 
-One symlink points outside the tree: `raw/simpletes-47d3413/datasets/zapbench/whole_brain_forecasting/zapbench_cache`
-(5.9 GB cache of the optional zapbench task, not used by the math tasks).  Recreate or drop it when relocating.
-
-To refresh the task-text registry after changing the snapshot: `python3 scripts/tools/build_task_text_registry.py`.
+The `extra` tier copies sources only; the astrodynamics ephemerides are downloaded by the builder, while the scRNA splits and
+the 6 GB ZAPBench cache are produced by those tasks' own `setup.sh` (see `config/dataset/sources.json`, `task_setup`).

@@ -1,0 +1,231 @@
+{
+ "schema": "harnessttt-dataset-sources/1.0",
+ "note": "Public, pinned sources of dataset/self_adapt_harness. scripts/setup/setup_dataset.py fetches each repository at its commit, copies the listed subtrees, applies config/dataset/overlay/, downloads the data files and verifies everything against config/dataset/CHECKSUMS.json.",
+ "tiers": {
+  "core": "the 11-task protocol: four math tasks + four ADRS tasks (evolution-fine-tuning), Hadamard + AHC039/AHC058 (SimpleTES); ~350 MB",
+  "gpu": "GPU MODE kernel tasks trimul / trimul_lb / mla_decode (skydiscover evaluators, TTT-Discover initial programs); needs an H100-class evaluator GPU to run",
+  "extra": "SimpleTES astrodynamics / scRNA denoising / ZAPBench sources; their data (ephemerides, generated splits, 6 GB cache) is prepared by the tasks' own setup scripts"
+ },
+ "repos": [
+  {
+   "name": "evolution-fine-tuning",
+   "tier": "core",
+   "url": "https://github.com/Open-Galapagos/evolution-fine-tuning.git",
+   "commit": "aac2e79be773715ab35b7945f5d9028e46675f02",
+   "snapshot_dir": "raw/eft-aac2e79",
+   "copy": [
+    [
+     "skydiscover/benchmarks/math/circle_packing",
+     "raw/eft-aac2e79/benchmarks/math/circle_packing"
+    ],
+    [
+     "skydiscover/benchmarks/math/erdos_min_overlap",
+     "raw/eft-aac2e79/benchmarks/math/erdos_min_overlap"
+    ],
+    [
+     "skydiscover/benchmarks/math/first_autocorr_ineq",
+     "raw/eft-aac2e79/benchmarks/math/first_autocorr_ineq"
+    ],
+    [
+     "skydiscover/benchmarks/math/second_autocorr_ineq",
+     "raw/eft-aac2e79/benchmarks/math/second_autocorr_ineq"
+    ],
+    [
+     "skydiscover/benchmarks/ADRS/eplb",
+     "raw/eft-aac2e79/benchmarks/ADRS/eplb"
+    ],
+    [
+     "skydiscover/benchmarks/ADRS/llm_sql",
+     "raw/eft-aac2e79/benchmarks/ADRS/llm_sql"
+    ],
+    [
+     "skydiscover/benchmarks/ADRS/prism",
+     "raw/eft-aac2e79/benchmarks/ADRS/prism"
+    ],
+    [
+     "skydiscover/benchmarks/ADRS/txn_scheduling",
+     "raw/eft-aac2e79/benchmarks/ADRS/txn_scheduling"
+    ]
+   ]
+  },
+  {
+   "name": "SimpleTES",
+   "tier": "core",
+   "url": "https://github.com/wq-will/SimpleTES.git",
+   "commit": "b7e0367b5ab19554fb40859e8069e091bb8c4ca2",
+   "snapshot_dir": "raw/simpletes-b7e0367",
+   "copy": [
+    [
+     "datasets/hadamard_maximal_det/hadamard_maximal_det_29",
+     "raw/simpletes-b7e0367/datasets/hadamard_maximal_det/hadamard_maximal_det_29"
+    ],
+    [
+     "datasets/ahc/ahc039",
+     "raw/simpletes-b7e0367/datasets/ahc/ahc039"
+    ],
+    [
+     "datasets/ahc/ahc058",
+     "raw/simpletes-b7e0367/datasets/ahc/ahc058"
+    ],
+    [
+     "datasets/ahc/cache",
+     "raw/simpletes-b7e0367/datasets/ahc/cache"
+    ],
+    [
+     "datasets/ahc/data_manifest.json",
+     "raw/simpletes-b7e0367/datasets/ahc/data_manifest.json"
+    ],
+    [
+     "datasets/ahc/docker_runner.py",
+     "raw/simpletes-b7e0367/datasets/ahc/docker_runner.py"
+    ],
+    [
+     "simpletes/construction.py",
+     "runtime/simpletes_min/simpletes/construction.py"
+    ],
+    [
+     "simpletes/utils/text.py",
+     "runtime/simpletes_min/simpletes/utils/text.py"
+    ]
+   ]
+  },
+  {
+   "name": "skydiscover",
+   "tier": "gpu",
+   "url": "https://github.com/skydiscover-ai/skydiscover.git",
+   "commit": "0d932b690670a7e544388ad362e9876c8bd256a0",
+   "snapshot_dir": "raw/skydiscover-0d932b6",
+   "copy": [
+    [
+     "benchmarks/gpu_mode/shared_eval.py",
+     "raw/skydiscover-0d932b6/benchmarks/gpu_mode/shared_eval.py"
+    ],
+    [
+     "benchmarks/gpu_mode/trimul",
+     "raw/skydiscover-0d932b6/benchmarks/gpu_mode/trimul"
+    ],
+    [
+     "benchmarks/gpu_mode/mla_decode",
+     "raw/skydiscover-0d932b6/benchmarks/gpu_mode/mla_decode"
+    ]
+   ]
+  },
+  {
+   "name": "ttt-discover",
+   "tier": "gpu",
+   "url": "https://github.com/test-time-training/discover.git",
+   "commit": "6c40e82dab9d5de7416ac873ad5cd3106084aaed",
+   "snapshot_dir": "raw/ttt-discover-6c40e82",
+   "copy": [
+    [
+     "results/kernel-engineering",
+     "raw/ttt-discover-6c40e82/results/kernel-engineering"
+    ],
+    [
+     "LICENSE",
+     "raw/ttt-discover-6c40e82/LICENSE"
+    ],
+    [
+     "README.md",
+     "raw/ttt-discover-6c40e82/README.md"
+    ],
+    [
+     "pyproject.toml",
+     "raw/ttt-discover-6c40e82/pyproject.toml"
+    ]
+   ]
+  },
+  {
+   "name": "SimpleTES-47d3413",
+   "tier": "extra",
+   "url": "https://github.com/wq-will/SimpleTES.git",
+   "commit": "47d3413da1d85dc24341219d47452d2601e56a57",
+   "snapshot_dir": "raw/simpletes-47d3413",
+   "copy": [
+    [
+     "datasets/astrodynamics",
+     "raw/simpletes-47d3413/datasets/astrodynamics"
+    ],
+    [
+     "datasets/open_problems_bio",
+     "raw/simpletes-47d3413/datasets/open_problems_bio"
+    ],
+    [
+     "datasets/zapbench",
+     "raw/simpletes-47d3413/datasets/zapbench"
+    ]
+   ],
+   "task_setup": [
+    "raw/simpletes-47d3413/datasets/open_problems_bio/setup.sh  (Python >= 3.11 venv + generated pancreas splits, ~480 MB)",
+    "raw/simpletes-47d3413/datasets/zapbench/whole_brain_forecasting/setup.sh  (zapbench clone + 6 GB cache)"
+   ]
+  }
+ ],
+ "downloads": [
+  {
+   "tier": "core",
+   "path": "raw/eft-aac2e79/benchmarks/ADRS/eplb/evaluator/expert-load.json",
+   "bytes": 234047730,
+   "sha256": "d93580b3cb3e404a60237fa708271b360229a0c6fdfdd924a8ec4fdb440b71ad",
+   "url": "https://huggingface.co/datasets/abmfy/eplb-openevolve/resolve/main/expert-load.json"
+  },
+  {
+   "tier": "core",
+   "path": "raw/eft-aac2e79/benchmarks/ADRS/llm_sql/evaluator/datasets/movies.csv",
+   "bytes": 9426372,
+   "sha256": "959ea9a5fce0be9cd5f4527d5e1e5da99c8ead9a598ac5a13554d754f79b3541",
+   "url": "https://huggingface.co/datasets/f20180301/adrs-data/resolve/main/llm_sql/datasets/movies.csv"
+  },
+  {
+   "tier": "core",
+   "path": "raw/eft-aac2e79/benchmarks/ADRS/llm_sql/evaluator/datasets/beer.csv",
+   "bytes": 2527772,
+   "sha256": "4682ba58e198962b26725c3d7a67f7ac53118c183c771d3ad3d8db21c80581c3",
+   "url": "https://huggingface.co/datasets/f20180301/adrs-data/resolve/main/llm_sql/datasets/beer.csv"
+  },
+  {
+   "tier": "core",
+   "path": "raw/eft-aac2e79/benchmarks/ADRS/llm_sql/evaluator/datasets/BIRD.csv",
+   "bytes": 33923105,
+   "sha256": "2abc187b259c8aa0bf43acb0a4252b957a353af88b3842a622cbab845876b485",
+   "url": "https://huggingface.co/datasets/f20180301/adrs-data/resolve/main/llm_sql/datasets/BIRD.csv"
+  },
+  {
+   "tier": "core",
+   "path": "raw/eft-aac2e79/benchmarks/ADRS/llm_sql/evaluator/datasets/PDMX.csv",
+   "bytes": 7444742,
+   "sha256": "975c70d830ec04bcea184103062e5fedec19e32ef5fc50bced223d5622eefd61",
+   "url": "https://huggingface.co/datasets/f20180301/adrs-data/resolve/main/llm_sql/datasets/PDMX.csv"
+  },
+  {
+   "tier": "core",
+   "path": "raw/eft-aac2e79/benchmarks/ADRS/llm_sql/evaluator/datasets/products.csv",
+   "bytes": 16109071,
+   "sha256": "465d51b3e9f88eda523454a45effe5ed33ef0e3078e6033ee1f9faa74954967b",
+   "url": "https://huggingface.co/datasets/f20180301/adrs-data/resolve/main/llm_sql/datasets/products.csv"
+  },
+  {
+   "tier": "extra",
+   "path": "raw/simpletes-47d3413/datasets/astrodynamics/data/ephemerides/de430.bsp",
+   "sha256": "6e1b277c5f07135a84950604b83e56b736be696a7f3560bcddb1d4aeb944fca1",
+   "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de430.bsp"
+  },
+  {
+   "tier": "extra",
+   "path": "raw/simpletes-47d3413/datasets/astrodynamics/data/ephemerides/naif0012.tls",
+   "sha256": "678e32bdb5a744117a467cd9601cd6b373f0e9bc9bbde1371d5eee39600a039b",
+   "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls"
+  }
+ ],
+ "overlay": {
+  "dir": "config/dataset/overlay",
+  "tiers": {
+   "runtime/": "core",
+   "raw/skydiscover-0d932b6/": "gpu"
+  }
+ },
+ "generated_not_checksummed": [
+  "raw/simpletes-47d3413/datasets/open_problems_bio/denoising/denoising_datasets/pancreas/*.npy",
+  "raw/simpletes-47d3413/datasets/zapbench/whole_brain_forecasting/zapbench_cache/"
+ ]
+}

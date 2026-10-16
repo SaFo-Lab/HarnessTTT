@@ -1,6 +1,6 @@
 """Outer-round orchestrator CLI (instance-wise).
 
-Per round, for EACH task instance tau in the task list (plan.md §2.2):
+Per round, for EACH task instance tau in the task list:
 K H1-agent runs conditioned on tau -> K candidate H2 packages for tau ->
 each rolled out once on tau by the inner loop -> per-task GRPO group.
 
@@ -1765,7 +1765,7 @@ def cmd_collect(args) -> None:
         # exactly like a schema failure: it takes INVALID_REWARD, cannot become
         # best_k or a beam parent, and no longer blocks the promotion of a
         # slower-but-under-cap improvement or suppresses the whole task's
-        # training (hadamard_v3 r3/r4, 2026-09-24: 0.809 @ 333 s and 0.686 @
+        # training (hadamard lineage, rounds 3/4: 0.809 @ 333 s and 0.686 @
         # 334 s hid a 0.548 @ 142 s improvement and zeroed two rounds).
         over_cap_marks = mark_over_cap_candidates(round_dir, tid, pt["candidates"])
         for mark in over_cap_marks:
@@ -2128,7 +2128,7 @@ def cmd_collect(args) -> None:
                          "best_score": g["best_score"], "best_k": g["best_k"],
                          "n_stuck_at_base": n_stuck, "candidates": cands}
         if prev_note:  # analyst notes are curated externally — never wipe them
-            # anti-leak (campaign_config: leakage_guard): the analyst_note is the
+            # anti-leak (leakage guard): the analyst_note is the
             # only free-form text reaching the proposer; drop it if it carries a
             # leak marker, else neutralize unproven result-claim words so they
             # can't survive as facts. Default-on; a no-op on clean structured notes.

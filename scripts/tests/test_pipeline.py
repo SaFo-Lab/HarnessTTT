@@ -19,6 +19,10 @@ pipeline = importlib.util.module_from_spec(SPEC)
 sys.modules["htt_pipeline"] = pipeline   # dataclasses resolve postponed annotations through sys.modules
 SPEC.loader.exec_module(pipeline)
 
+from site_env import ensure_site_env  # noqa: E402  (scripts/tests is the test root)
+
+ensure_site_env()
+
 
 class FakeSlurmLoopTest(unittest.TestCase):
     def setUp(self):
@@ -367,6 +371,71 @@ class SlurmOutageTest(FakeSlurmLoopTest):
         self.assertIn(f"re-attaching to running round job {jid}", log)
         self.assertNotIn("previous attempt did not collect", log)
         self.assertEqual(len(list((self.tmp / "slurm").glob("*.json"))), 1)
+
+
+class SiteSettingsTest(unittest.TestCase):
+    def test_site_problems_lists_unset_placeholder_and_missing_paths(self):
+        env = {"HTT_SLURM_ACCOUNT": "acct", "HTT_SLURM_PARTITION": "<gpu-partition>", "HTT_SLURM_QOS": "", "CONTAINER_MOUNTS": "/:/",
+               "SAH_MODEL_PATH": "/nonexistent/model", "SAH_SERVED_MODEL": "m", "SAH_IMAGE": str(ROOT / "pyproject.toml"),
+               "VLLM_ENV": str(ROOT), "SAH_PYTHON": str(ROOT / "pyproject.toml")}
+        problems = pipeline.site_problems(env, train=False)
+        self.assertTrue(any("HTT_SLURM_PARTITION is still a placeholder" in x for x in problems), problems)
+        self.assertTrue(any("HTT_SLURM_QOS is unset" in x for x in problems), problems)
+        self.assertTrue(any("SAH_MODEL_PATH does not exist" in x for x in problems), problems)
+        self.assertFalse(any("TRAIN_ENV" in x for x in problems))
+        self.assertTrue(any("TRAIN_ENV is unset" in x for x in pipeline.site_problems(env, train=True)))
+        env.update({"HTT_SLURM_PARTITION": "p", "HTT_SLURM_QOS": "q", "SAH_MODEL_PATH": str(ROOT)})
+        self.assertEqual(pipeline.site_problems(env, train=False), [])
+
+    def test_prepare_fails_before_any_submission_when_the_site_file_is_incomplete(self):
+        tmp = Path(tempfile.mkdtemp(prefix="htt_site_"))
+        try:
+            real = pipeline.load_env
+            pipeline.load_env = lambda root: dict(real(root), HTT_SLURM_ACCOUNT="<your-slurm-account>")
+            try:
+                cfg = pipeline.Config.load(None, dict(campaign="t", name="site", task="hadamard", max_round=1, freeze=False,
+                                                      require_clean_tree=False, slurm_bin=str(FAKE), sah_root=str(ROOT),
+                                                      run_root=str(tmp / "runs")))
+                runner = pipeline.Runner(cfg, quiet=True)
+                with self.assertRaises(SystemExit) as ctx:
+                    runner.prepare()
+                self.assertIn("HTT_SLURM_ACCOUNT is still a placeholder", str(ctx.exception))
+                self.assertIn("config/local.env", str(ctx.exception))
+                self.assertFalse((tmp / "runs" / "t" / "site" / "gen").glob("*.sbatch") and list((tmp / "runs" / "t" / "site" / "gen").glob("*.sbatch")))
+                runner.release()
+            finally:
+                pipeline.load_env = real
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_unmounted_paths_are_detected(self):
+        self.assertEqual(pipeline.unmounted("/data:/data,/tmp:/tmp", ["/data/x", "/tmp/y"]), [])
+        self.assertEqual(pipeline.unmounted("/data:/data,/opt/time:/usr/bin/time", ["/opt/time", "/no_such_mount_htt/run"]),
+                         ["/opt/time", "/no_such_mount_htt/run"])
+        self.assertEqual(pipeline.mount_sources("/a,/b:/c:ro"), [("/a", "/a"), ("/b", "/c")])
+
+
+class FreezeTreeTest(unittest.TestCase):
+    def test_frozen_worktree_links_the_ignored_payloads(self):
+        tmp = Path(tempfile.mkdtemp(prefix="htt_freeze_"))
+        try:
+            main = tmp / "main"; main.mkdir()
+            git = lambda *a: subprocess.run(["git", "-C", str(main), *a], check=True, capture_output=True, text=True)
+            git("init", "-q"); git("config", "user.email", "t@t"); git("config", "user.name", "t")
+            (main / ".gitignore").write_text("/slime\n/dataset/self_adapt_harness\n/.deps\n/config/local.env\n")
+            (main / "config").mkdir(); (main / "config" / "env.sh").write_text("# env\n")
+            git("add", "-A"); git("commit", "-q", "-m", "init")
+            (main / ".deps").mkdir(); (main / ".deps" / "NexAU").mkdir()
+            (main / "dataset" / "self_adapt_harness").mkdir(parents=True)
+            (main / "config" / "local.env").write_text("export X=1\n")
+            wt = pipeline.freeze_tree(main, tmp / "worktrees", lambda m: None)
+            for rel in (".deps", "dataset/self_adapt_harness", "config/local.env"):
+                self.assertTrue((wt / rel).is_symlink(), rel)
+                self.assertEqual((wt / rel).resolve(), (main / rel).resolve(), rel)
+            self.assertFalse((wt / "slime").exists(), "absent payloads are not linked")
+            self.assertEqual(pipeline.git(wt, "status", "--porcelain"), "")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

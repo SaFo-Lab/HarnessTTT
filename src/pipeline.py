@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""HarnessTTT evolve loop runner (login node; Python >= 3.9 with PyYAML).
+"""HarnessTTT evolve loop runner (submitting host; Python >= 3.9 with PyYAML).
 
-    python3 src/pipeline.py config/pipelines/hadamard_v3.yaml          start or resume the lineage described by that YAML
+    python3 src/pipeline.py config/pipelines/hadamard.yaml          start or resume the lineage described by that YAML
     python3 src/pipeline.py                                            same, with the default config/pipeline.yaml
-    python3 src/pipeline.py config/pipelines/hadamard_v3.yaml status   progress table of that run (progress.json + run dir)
-    python3 src/pipeline.py config/pipelines/hadamard_v3.yaml stop     write ABL_STOP: stop between jobs (a running job finishes)
+    python3 src/pipeline.py config/pipelines/hadamard.yaml status   progress table of that run (progress.json + run dir)
+    python3 src/pipeline.py config/pipelines/hadamard.yaml stop     write ABL_STOP: stop between jobs (a running job finishes)
     python3 src/pipeline.py <config> --dry-run                         write the next sbatch script into <run>/gen without submitting
     (any YAML key can be overridden on the command line: --max-round 3 --name test ...)
 
@@ -58,7 +58,7 @@ class SlurmUnavailable(RuntimeError):
     """squeue/sacct/sbatch did not answer (controller fail-over, slurmdbd outage): callers keep waiting instead of guessing."""
 
 
-# OUTAGE-001 (2026-10-01 16:20 PDT): the Slurm controller failed over ("Slurm backup controller in standby mode"); squeue timed
+# OUTAGE-001: the Slurm controller failed over ("Slurm backup controller in standby mode"); squeue timed
 # out, sacct answered with database errors and sbatch refused submissions.  The runner read the empty squeue answer as free
 # capacity, submitted into the outage and crashed on the sbatch error; a longer outage would have ended wait_job's 30-poll
 # miss cap for RUNNING jobs and resubmitted them.  Every Slurm client call now goes through Runner._slurm_run, which turns
@@ -76,7 +76,7 @@ _SLURM_CALL_TIMEOUT = 300.0
 @dataclass
 class Config:
     campaign: str = "default"
-    name: str = "hadamard_v3"
+    name: str = "hadamard"
     task: str = "hadamard"
     adv: str = "v3"
     k: int = 8
@@ -117,7 +117,7 @@ class Config:
     # GPUs of a round job reserved for the task evaluator (GPU kernel tasks): vLLM replicas use round_gpus - eval_gpus,
     # evaluations are serialised per reserved GPU (SAH_EVAL_GPU_POOL in the worker)
     eval_gpus: int = 0
-    # per-lineage base model (2026-10-01): proposer and frozen executor; None = the tree's env (SAH_MODEL_PATH / SAH_SERVED_MODEL).
+    # per-lineage base model: proposer and frozen executor; None = the tree's env (SAH_MODEL_PATH / SAH_SERVED_MODEL).
     # vllm_tp = GPUs per vLLM replica (27B bf16 needs 2 on H100 80GB); round_gpus = replicas * vllm_tp + eval_gpus.
     # max_model_len = vLLM --max-model-len = SAH_MAX_CONTEXT_TOKENS handed to both agent packages (CONTEXT-001).
     model_path: Optional[str] = None
@@ -125,6 +125,10 @@ class Config:
     vllm_tp: int = 1
     max_model_len: int = 131072
     node_gpus: int = 8          # GPUs per node; every job here is single-node (NODECAP-001)
+    # resources of a training job: slime gathers the full state dict on every rank when it saves the merged checkpoint
+    # (8 x 55 GB for a 27B), so the job takes the whole node's memory by default (--mem=0); set e.g. "1000G" where mem=0 is refused
+    train_cpus: int = 32
+    train_mem: str = "0"
 
     @classmethod
     def load(cls, path: Optional[Path], overrides: Dict[str, Any]) -> "Config":
@@ -143,7 +147,7 @@ class Config:
         cfg = cls(**data)
         if cfg.adv not in ADVS:
             raise SystemExit(f"adv must be one of {ADVS}, got {cfg.adv!r}")
-        for name in ("lr", "kl"):
+        for name in ("lr", "kl", "train_mem"):
             setattr(cfg, name, str(getattr(cfg, name)))
         return cfg
 
@@ -166,6 +170,62 @@ def load_env(sah_root: Path) -> Dict[str, str]:
     return env
 
 
+# site settings every job needs (config/local.env); a missing or placeholder value fails the run before anything is submitted
+SITE_KEYS_JOB = ("HTT_SLURM_ACCOUNT", "HTT_SLURM_PARTITION", "HTT_SLURM_QOS", "CONTAINER_MOUNTS", "SAH_MODEL_PATH",
+                 "SAH_SERVED_MODEL", "SAH_IMAGE", "VLLM_ENV", "SAH_PYTHON")
+SITE_KEYS_TRAIN = ("TRAIN_ENV", "SLIME_ROOT", "MEGATRON_ROOT")
+
+
+def site_problems(env: Dict[str, str], *, train: bool = True) -> List[str]:
+    """Settings of config/local.env that are unset, still the example's ``<placeholder>``, or point at nothing."""
+    problems: List[str] = []
+    keys = SITE_KEYS_JOB + (SITE_KEYS_TRAIN if train else ())
+    for key in keys:
+        value = (env.get(key) or "").strip()
+        if not value:
+            problems.append(f"{key} is unset")
+        elif "<" in value or ">" in value:
+            problems.append(f"{key} is still a placeholder: {value}")
+    for key, want in (("SAH_MODEL_PATH", "dir"), ("SAH_IMAGE", "file")):
+        value = (env.get(key) or "").strip()
+        if value and "<" not in value and not (Path(value).is_dir() if want == "dir" else Path(value).is_file()):
+            problems.append(f"{key} does not exist: {value}")
+    return problems
+
+
+def mount_sources(container_mounts: str) -> List[Tuple[str, str]]:
+    """``src:dst[:flags]`` entries of CONTAINER_MOUNTS as (src, dst); a bare ``path`` mounts to itself."""
+    out: List[Tuple[str, str]] = []
+    for item in (container_mounts or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        parts = item.split(":")
+        out.append((parts[0], parts[1] if len(parts) > 1 and parts[1] else parts[0]))
+    return out
+
+
+def unmounted(container_mounts: str, paths: List[Any]) -> List[str]:
+    """Paths the container would not see under the same name: no mount source covers them with src == dst."""
+    mounts = mount_sources(container_mounts)
+    missing: List[str] = []
+    for raw in paths:
+        if not raw:
+            continue
+        real = Path(str(raw)).resolve()
+        covered = False
+        for src, dst in mounts:
+            if src != dst:
+                continue
+            base = Path(src).resolve()
+            if real == base or base in real.parents:
+                covered = True
+                break
+        if not covered:
+            missing.append(str(real))
+    return missing
+
+
 def git(root: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True).stdout.strip()
 
@@ -181,7 +241,7 @@ def freeze_tree(main_root: Path, worktrees: Path, log) -> Path:
         git(main_root, "worktree", "add", "--detach", str(wt), sha)
         log(f"frozen worktree created: {wt} (commit {sha[:10]})")
     # git-ignored payloads and the site file: the worktree sees the main tree's copies (config/local.env is not tracked)
-    for rel in ("slime", "dataset/self_adapt_harness", "config/local.env"):
+    for rel in ("slime", "dataset/self_adapt_harness", ".deps", "config/local.env"):
         src, dst = main_root / rel, wt / rel
         if src.exists() and not dst.exists() and not dst.is_symlink():
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -254,12 +314,22 @@ class Runner:
             pid = (self.run / "pipeline.pid").read_text().strip() if (self.run / "pipeline.pid").is_file() else "?"
             raise SystemExit(f"another pipeline.py (pid {pid}) drives {self.run}; stop it first")
         (self.run / "pipeline.pid").write_text(f"{os.getpid()}\n")
+        problems = site_problems(self.env, train=self.cfg.max_round > 1)
+        if problems:
+            raise SystemExit("site settings incomplete; edit config/local.env (template: config/local.env.example):\n  - "
+                             + "\n  - ".join(problems))
         if self.cfg.freeze:
             self.sah_root = freeze_tree(self.main_root, self.camp / "worktrees", self.log)
             self.env = load_env(self.sah_root)
             self.apply_model_override()
         elif self.cfg.require_clean_tree and git(self.main_root, "status", "--porcelain"):
             raise SystemExit(f"{self.main_root} has uncommitted changes; commit (or run with freeze) before submitting jobs")
+        # the jobs run inside a container: everything they open must be visible under the same path (CONTAINER_MOUNTS)
+        e = self.env
+        for path in unmounted(e.get("CONTAINER_MOUNTS", ""), [self.sah_root, self.main_root, self.run_root, e.get("SAH_MODEL_PATH"),
+                                                               e.get("SAH_DATA_ROOT"), e.get("SAH_IMAGE"), e.get("VLLM_ENV"),
+                                                               e.get("SAH_PYTHON"), e.get("NEXAU_ROOT"), e.get("SLIME_ROOT")]):
+            self.log(f"warning: {path} is not under any CONTAINER_MOUNTS source (same path inside and outside); jobs will not see it")
         for name, value in (("TASK", self.cfg.task), ("ARM", self.cfg.adv), ("K", self.cfg.k), ("H1_SEED", self.cfg.h1_seed)):
             path = self.run / name
             if not path.is_file():
@@ -282,7 +352,7 @@ class Runner:
         if self.cfg.vllm_tp < 1 or (self.cfg.round_gpus - self.cfg.eval_gpus) % self.cfg.vllm_tp:
             raise SystemExit(f"round_gpus - eval_gpus must be a multiple of vllm_tp: round_gpus {self.cfg.round_gpus}, "
                              f"eval_gpus {self.cfg.eval_gpus}, vllm_tp {self.cfg.vllm_tp}")
-        # NODECAP-001 (2026-10-01 18:12): the first 27B lineages asked for 10 GPUs (4 replicas x TP2 + 2 evaluator GPUs) on
+        # NODECAP-001: the first 27B lineages asked for 10 GPUs (4 replicas x TP2 + 2 evaluator GPUs) on
         # one node; the cluster's nodes have 8 GPUs, and sbatch answered "Requested node configuration is not available" only when capacity
         # finally allowed the submission, crashing both runners hours after launch. Every job here is single-node.
         too_big = {k: v for k, v in (("round_gpus", self.cfg.round_gpus), ("train_gpus", self.cfg.train_gpus),
@@ -482,7 +552,7 @@ class Runner:
 
     def earlier_waiter(self, since: float) -> Optional[str]:
         """Name of a sibling lineage (same campaign) whose live runner has been waiting for capacity longer than `since`.
-        FAIRSHARE-001 (2026-10-02): two runners sharing the 48-GPU budget poll independently, and the one whose job has
+        FAIRSHARE-001: two runners sharing the 48-GPU budget poll independently, and the one whose job has
         just ended re-takes the freed GPUs within one poll, so the other starved for hours (pruned lineage, 08:33-11:38).
         A runner records when it started waiting (<run>/WAITING_SINCE); whoever waited longest gets the next slot."""
         for sibling in sorted(self.camp.iterdir()) if self.camp.is_dir() else []:
@@ -545,7 +615,8 @@ class Runner:
             "RUN": self.run, "SAH_ROOT": self.sah_root, "PIPELINE_DIR": self.sah_root / "scripts" / "pipeline",
             "ENV_FILE": self.sah_root / "config" / "env.sh", "TASK_ID": self.cfg.task_id, "K": self.cfg.k, "ADV": self.cfg.adv,
             "H1_SEED": self.cfg.h1_seed, "MAX_ROUND": self.cfg.max_round, "BRIEF_DIR": self.brief_dir, "GPUS": g, "CPUS": cpus,
-            "MEM": mem, "TRAIN_GPUS": self.cfg.train_gpus, "TOKEN_BUDGET": self.cfg.token_budget, "LR": self.cfg.lr,
+            "MEM": mem, "TRAIN_GPUS": self.cfg.train_gpus, "TRAIN_CPUS": self.cfg.train_cpus, "TRAIN_MEM": self.cfg.train_mem,
+            "TOKEN_BUDGET": self.cfg.token_budget, "LR": self.cfg.lr,
             "KL": self.cfg.kl, "ACCOUNT": e["HTT_SLURM_ACCOUNT"], "PARTITION": e["HTT_SLURM_PARTITION"], "QOS": e["HTT_SLURM_QOS"],
             "CONTAINER_MOUNTS": e["CONTAINER_MOUNTS"], "OVERCAP": 1 if self.cfg.over_cap_as_invalid else 0,
             "MAX_EVALS": self.cfg.max_evals, "EVAL_TIMEOUT": self.cfg.eval_timeout,
@@ -763,13 +834,13 @@ class Runner:
                 continue
             final = ""
             if info is None:
-                # A transient squeue miss is not a finished job: on 2026-09-27 one empty squeue answer made the runner
+                # A transient squeue miss is not a finished job: one empty squeue answer made the runner
                 # declare a RUNNING round job gone, archive its round dir and resubmit, so two jobs ran the same round.
                 # Only a terminal sacct state (or a long streak of unanswered polls) ends the wait.
                 try:
                     final = self.sacct_state(jid)
                 except SlurmUnavailable as e:
-                    # the controller says "not queued"; only the accounting DB is down (2026-10-01 17:14: round 13 of
+                    # the controller says "not queued"; only the accounting DB is down (round 13 of
                     # trimul_lb_k32 had collected, yet the runner waited for sacct). Complete artefacts settle it.
                     if self.artefacts_complete(kind, n):
                         self.log(f"{kind} {n}: job {jid} is no longer queued and its artefacts are complete; accounting DB "
@@ -1023,7 +1094,7 @@ class Runner:
         kind, n = ("train" if m.group(1) else "round"), int(m.group(2))
         self.log(f"re-attaching to running {kind} job {jid} (round {n}, {info['state']})")
         final = self.wait_job(jid, kind, n)
-        # Same bookkeeping as do_round/do_train: before 2026-09-29 a round that finished under a re-attached runner got no
+        # Same bookkeeping as do_round/do_train: previously a round that finished under a re-attached runner got no
         # "collected" line and no status-table row until the next restart (trimul r4), because only do_round summarised.
         # A job that ended without its artefacts is left to run_loop, which resubmits it through the normal retry path.
         if kind == "round":
@@ -1147,10 +1218,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--config", default=None, help="pipeline YAML (same as the positional form)")
     ap.add_argument("--dry-run", action="store_true", help="write the next sbatch script without submitting")
     ap.add_argument("--quiet", action="store_true", help="log to <run>/pipeline.log only")
-    for key in ("campaign", "name", "task", "adv", "run_root", "sah_root", "slurm_bin", "brief_dir", "lr", "kl", "round_time", "train_time"):
+    for key in ("campaign", "name", "task", "adv", "run_root", "sah_root", "slurm_bin", "brief_dir", "lr", "kl", "round_time", "train_time",
+                "train_mem", "model_path", "served_model", "seed_programs_file", "baseline_json"):
         ap.add_argument(f"--{key.replace('_', '-')}", dest=key)
-    for key in ("k", "round_gpus", "train_gpus", "max_round", "h1_seed", "max_evals", "eval_timeout", "token_budget",
-                "max_round_retries", "max_train_retries", "gpu_cap", "max_jobs"):
+    for key in ("k", "round_gpus", "train_gpus", "train_cpus", "max_round", "h1_seed", "max_evals", "eval_timeout", "token_budget",
+                "max_round_retries", "max_train_retries", "gpu_cap", "max_jobs", "eval_gpus", "vllm_tp", "max_model_len"):
         ap.add_argument(f"--{key.replace('_', '-')}", dest=key, type=int)
     for key in ("poll_seconds", "heartbeat_minutes"):
         ap.add_argument(f"--{key.replace('_', '-')}", dest=key, type=float)

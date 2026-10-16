@@ -2,7 +2,7 @@
 
 Runs the task evaluator in a subprocess with a hard wall-clock timeout, so a
 crashing / hanging / import-polluting candidate cannot take down the harness
-(plan.md §6.1, §13.2). Returns a normalized :class:`EvalOutcome`.
+Returns a normalized :class:`EvalOutcome`.
 """
 from __future__ import annotations
 
@@ -103,9 +103,12 @@ def evaluate_program(
     }))
 
     env = dict(os.environ)
-    # let the evaluator import its runtime shim + the candidate's deps
-    extra = f"{task.shim_path}{os.pathsep}{task.task_dir}"
-    env["PYTHONPATH"] = extra + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    env.update(getattr(task, "env", None) or {})   # task-pinned evaluator settings (manifest "env")
+    # let the evaluator import its runtime shim + the candidate's deps (+ the task's extra PYTHONPATH entries)
+    entries = [str(task.shim_path), str(task.task_dir)] + [str(x) for x in (getattr(task, "extra_pythonpath", None) or [])]
+    if env.get("PYTHONPATH"):
+        entries.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(entries)
 
     gpu_lock = _acquire_eval_gpu(env)  # GPU kernel tasks: one evaluation at a time per reserved GPU (timings need an idle GPU)
     t0 = time.time()

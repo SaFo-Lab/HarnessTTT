@@ -1,7 +1,7 @@
 # scripts/pipeline -- the online-training loop
 
 `python3 src/pipeline.py` is the entry point: it fills the templates below, submits the jobs and reports progress (see
-`readme.md`).  `chain.sh` is the job-side alternative that chains the same jobs through sbatch epilogues.
+`docs/pipeline_guide.md`).  `chain.sh` is the job-side alternative that chains the same jobs through sbatch epilogues.
 
 After every collected round the proposer `M_phi` receives one GRPO LoRA update on that round's H1 trajectories and the
 next round proposes with the updated (merged) checkpoint while the executor `M0` stays frozen.
@@ -52,7 +52,7 @@ Environment for `chain.sh` (after `config/env.sh`): `SAH9B_RUN_ROOT` (dir holdin
 ## Starting an arm
 
 ```bash
-source config/env.sh; camp=$RUN_ROOT/<campaign>; run=$camp/hadamard_v3
+source config/env.sh; camp=$RUN_ROOT/<campaign>; run=$camp/hadamard
 mkdir -p "$run"; echo hadamard > $run/TASK; echo v3 > $run/ARM; echo 2 > $run/GPUS; echo 48 > $camp/GPU_CAP
 SAH9B_RUN_ROOT=$camp bash scripts/pipeline/chain.sh "$run" start 1
 ```
@@ -61,7 +61,7 @@ For a paired ablation seed every arm with the same recorded round 1 (`rounds/rou
 `round001/best_programs_after.json` + `rounds/task_feedback.json`) and enter with `chain.sh <run> after_round 1`, so the
 arms differ only in the credit assignment of the first update.
 
-## Caveats (learned 2026-09-22 .. 24)
+## Caveats
 
 - **Never serve vLLM on fixed ports in a multi-job campaign.**  vLLM 0.17.1 binds with `SO_REUSEPORT`; two round jobs on
   one node using `127.0.0.1:8800/8801` silently shared the ports and one job's H1 turns were answered by the other job's

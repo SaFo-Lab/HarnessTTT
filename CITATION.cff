@@ -1,0 +1,49 @@
+cff-version: 1.2.0
+message: "If you use HarnessTTT, please cite the paper."
+title: "HarnessTTT: Learn to Optimize Harness at Test-Time for Scientific Discovery"
+type: software
+authors:
+  - family-names: Ma
+    given-names: Yingzi
+  - family-names: Cao
+    given-names: Yulong
+  - family-names: Li
+    given-names: Nanxi
+  - family-names: Wu
+    given-names: Fang
+  - family-names: Zhang
+    given-names: Yizhe
+  - family-names: Zou
+    given-names: James
+  - family-names: Choi
+    given-names: Yejin
+  - family-names: Xiao
+    given-names: Chaowei
+repository-code: "https://github.com/SaFo-Lab/Self_Adapt_Harness"
+url: "https://gray311.github.io/harnessrl/"
+preferred-citation:
+  type: article
+  title: "HarnessTTT: Learn to Optimize Harness at Test-Time for Scientific Discovery"
+  authors:
+    - family-names: Ma
+      given-names: Yingzi
+    - family-names: Cao
+      given-names: Yulong
+    - family-names: Li
+      given-names: Nanxi
+    - family-names: Wu
+      given-names: Fang
+    - family-names: Zhang
+      given-names: Yizhe
+    - family-names: Zou
+      given-names: James
+    - family-names: Choi
+      given-names: Yejin
+    - family-names: Xiao
+      given-names: Chaowei
+  year: 2026
+  journal: "arXiv preprint"
+  identifiers:
+    - type: other
+      value: "arXiv:2610.17370"
+  url: "https://arxiv.org/abs/2610.17370"

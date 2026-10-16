@@ -4,7 +4,7 @@
 
 **Outer loop:** `M_phi + H1 → K candidate H2`. **Inner loop** (src/inner):
 `M0 + H2 → solution + reward`. RL (GRPO) updates **only** `phi` — M0 stays
-frozen forever (plan.md §0).
+frozen forever.
 
 ## One round
 

@@ -1,7 +1,7 @@
 # HarnessTTT evolve loop -- edit, then:  python3 src/pipeline.py        (status: python3 src/pipeline.py status)
 # One file = one lineage (run dir $RUN_ROOT/<campaign>/<name>).  Site paths come from config/env.sh + config/local.env.
 campaign: default          # campaign dir under RUN_ROOT; holds GPU_CAP (optional file), briefs_none/, worktrees/
-name: hadamard_v3          # run dir name (also the Slurm job name suffix: htt-<name>-rN, htt-<name>-train-rN)
+name: hadamard          # run dir name (also the Slurm job name suffix: htt-<name>-rN, htt-<name>-train-rN)
 task: hadamard             # cp26 | hadamard | <eft task id>
 adv: v3                    # advantage implementation of the collect step: v3 (RLOO + 0.3 softmax sharpening) | grpo | v2 | legacy | anchored
 k: 8                       # candidate harnesses per round

@@ -11,7 +11,7 @@ export GIT_OPTIONAL_LOCKS=0   # v9: nine jobs share one worktree; never block on
 PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 _JOB_BASE_MODEL="${SAH_MODEL_PATH:-}"; _JOB_SERVED_MODEL="${SAH_SERVED_MODEL:-}"
 source "${HARNESSTTT_ENV:-$PIPELINE_DIR/../../config/env.sh}"
-# MODELCLOBBER-001 (2026-10-02): config/local.env used to export SAH_MODEL_PATH unconditionally, so re-sourcing env.sh here replaced
+# MODELCLOBBER-001: config/local.env used to export SAH_MODEL_PATH unconditionally, so re-sourcing env.sh here replaced
 # the lineage's base model (Qwen3.8-27B) with the site default (9B) after the sbatch had exported it: in the first 27B rounds the
 # executor pool, the LoRA base and every trained proposer were the 9B while the baselines ran on the 27B. The job-level value is
 # restored after the source and checked against the explicit contract SAH9B_BASE_MODEL.
@@ -28,7 +28,7 @@ N_GPUS="${SLURM_GPUS_ON_NODE:?no GPU allocation}"; PROPOSE_PAR="${SAH9B_PROPOSE_
 # GPU kernel tasks: SAH9B_EVAL_GPUS GPUs are reserved for the task evaluator (never for vLLM); rollouts inherit SAH_EVAL_GPU_POOL
 # and eval_runner serialises evaluations per pool GPU (a kernel benchmark needs an otherwise idle GPU for its timings).
 EVAL_GPUS="${SAH9B_EVAL_GPUS:-0}"; TP="${SAH9B_VLLM_TP:-1}"; MAX_MODEL_LEN="${SAH9B_MAX_MODEL_LEN:-131072}"
-# TENSORPARALLEL-001 (2026-10-01): a replica spans SAH9B_VLLM_TP contiguous GPUs (27B bf16 = 55.6 GB of weights does not leave a
+# TENSORPARALLEL-001: a replica spans SAH9B_VLLM_TP contiguous GPUs (27B bf16 = 55.6 GB of weights does not leave a
 # usable KV cache on one H100; TP=1 is the 9B one-GPU-per-replica layout). The evaluator GPUs come after the replica GPUs.
 N_REPLICAS=$(( (N_GPUS - EVAL_GPUS) / TP ))
 [ "$N_REPLICAS" -ge 1 ] && [ $(( N_REPLICAS * TP + EVAL_GPUS )) -eq "$N_GPUS" ] || { echo "GPU layout mismatch (gpus=$N_GPUS eval_gpus=$EVAL_GPUS tp=$TP)" >&2; exit 65; }
@@ -37,7 +37,7 @@ replica_gpus(){ seq -s, $(( $1 * TP )) $(( $1 * TP + TP - 1 )); }
 # EAGER-001 / MULTITP-001 (from the 27B campaigns): --enforce-eager only for TP=1 (a 64-layer 27B pays for it on every decode step);
 # with TP>1 disable vLLM's FlashInfer fused all-reduce/RMSNorm pass, whose workspace creation races between independent TP replicas.
 if [ "$TP" -gt 1 ]; then VLLM_EXTRA=(--tensor-parallel-size "$TP" --compilation-config '{"pass_config":{"fuse_allreduce_rms":false}}'); else VLLM_EXTRA=(--enforce-eager); fi
-# GPU-IDLE-001 (2026-09-29): rollouts are CPU-bound (evaluator) and H1/H2 decode is latency-bound, so 4 replicas per round sat
+# GPU-IDLE-001: rollouts are CPU-bound (evaluator) and H1/H2 decode is latency-bound, so 4 replicas per round sat
 # ~90% idle. Size each replica's concurrency to the parallelism it must carry (K sessions over N_REPLICAS replicas)
 # instead of adding GPUs: fewer, busier replicas.  Override with SAH9B_VLLM_MAX_SEQS.
 PAR_MAX=$(( PROPOSE_PAR > ROLLOUT_PAR ? PROPOSE_PAR : ROLLOUT_PAR )); VLLM_MAX_SEQS="${SAH9B_VLLM_MAX_SEQS:-$(( (PAR_MAX + N_REPLICAS - 1) / N_REPLICAS ))}"
@@ -47,7 +47,7 @@ if [ "$ROUND" = 1 ]; then PHASE="$RUN_DIR/phases"; VLOG="$RUN_DIR/vllm"; else PH
 [ -e "$ROUND_DIR/round.json" ] && { echo "refusing to overwrite an existing round: $ROUND_DIR" >&2; exit 42; }
 mkdir -p "$ROUND_DIR" "$PHASE" "$VLOG"
 log(){ echo "[$(date -Is)] $*"; }
-# --- per-job vLLM port range (2026-09-23): vLLM binds its API socket with SO_REUSEPORT, so two jobs of this experiment on
+# --- per-job vLLM port range: vLLM binds its API socket with SO_REUSEPORT, so two jobs of this experiment on
 #     one node that both used 127.0.0.1:8800/8801 silently shared the ports and the kernel split their H1 requests across
 #     BOTH proposers (a job's own servers answered as few as 4 of ~138 turns). Pick a free range per job (plain bind test,
 #     which fails against reuse-port sockets too) and require, for readiness, OUR pid alive AND the served model root ==
@@ -148,7 +148,7 @@ nvidia-smi -L | tee "$PHASE/nvidia-smi-L.txt"
 "$SAH_PYTHON" -c "from nexau import Agent; import numpy, scipy, yaml; print('runtime imports ok')"
 
 
-# --- v11 (2026-09-22): replica liveness guard. At 00:01:10 PDT all vLLM EngineCore processes of two jobs on two different
+# --- v11: replica liveness guard. All vLLM EngineCore processes of two jobs on two different
 #     nodes were killed externally; v10 kept looping and burned rounds 2-8 as empty rounds (proposer: "Connection refused").
 #     v11 probes every replica with a 1-token completion before each round and after propose/rollouts, relaunches dead
 #     replicas (GPU memory is released when the EngineCore dies), redoes the damaged round in-job (<= 2 retries per round),

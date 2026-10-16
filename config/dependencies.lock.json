@@ -77,15 +77,24 @@
  },
  "dataset": {
   "path": "dataset/self_adapt_harness",
-  "copied_from": "self_adapt_harness dataset snapshot (2026-09-24, 889 files, 1.5 GB)",
-  "manifest_sha256": "acc3550e452340bdfee1580b8a2c8eb19db83d5b9285cdb2f7908ebb7d0582c6",
-  "provenance_sha256": "f6e0821c9d514a3e0566e83993155683652609a1dd1398e2eca8d36b18465261",
+  "copied_from": "built by scripts/setup/setup_dataset.py from config/dataset/sources.json (pinned public commits + sha256-checked downloads)",
+  "manifest_sha256": "c73471621eb6d60cb43ff7599252f9fe08cdcd8654af06377d6dc46593b34fee",
+  "provenance_sha256": "73f4254467d6669bf263a85456e8edf04fa3744c0c2fe926a2d1524309143062",
   "upstream": {
    "evolution-fine-tuning": "aac2e79be773715ab35b7945f5d9028e46675f02",
-   "SimpleTES": "b7e0367b5ab19554fb40859e8069e091bb8c4ca2"
+   "SimpleTES": "b7e0367b5ab19554fb40859e8069e091bb8c4ca2",
+   "SimpleTES (extra tier)": "47d3413da1d85dc24341219d47452d2601e56a57",
+   "skydiscover": "0d932b690670a7e544388ad362e9876c8bd256a0",
+   "ttt-discover": "6c40e82dab9d5de7416ac873ad5cd3106084aaed"
   },
   "external_symlink": "raw/simpletes-47d3413/datasets/zapbench/whole_brain_forecasting/zapbench_cache (optional zapbench task cache, 5.9 GB, not copied)",
-  "gpu_tasks_added": "2026-09-28: raw/skydiscover-0d932b6/benchmarks/gpu_mode (skydiscover 0d932b6) + TTT-discover 6c40e82 initial programs; runtime/skydiscover_min/skydiscover shim"
+  "gpu_tasks_added": "2026-09-28: raw/skydiscover-0d932b6/benchmarks/gpu_mode (skydiscover 0d932b6) + TTT-discover 6c40e82 initial programs; runtime/skydiscover_min/skydiscover shim",
+  "recipe": {
+   "sources": "config/dataset/sources.json",
+   "manifest": "config/dataset/MANIFEST_eft.json",
+   "checksums": "config/dataset/CHECKSUMS.json",
+   "overlay": "config/dataset/overlay"
+  }
  },
  "model": {
   "id": "Qwen/Qwen3.5-9B",
@@ -94,7 +103,7 @@
  },
  "config": {
   "finch_targets.json": "cf4d6d073b74aa2b6b918ce94e5d2cacfa858982a56fa670243883a8df8a1a20",
-  "task_text_registry.json": "20583de82cc2d19c8380758bbb3d56397fb7c4e36cb0a9e31f87f081d6861a82",
+  "task_text_registry.json": "1e59a7064df84235986e5209d1aeea85ce92c83983a826264e167aae5fa918cb",
   "baseline_h2_20ev.json": "429a2c39fec4fc425fa98fd194ecd085523a3ce4d796a5bc0f0790942d6e5a58"
  },
  "environments": {

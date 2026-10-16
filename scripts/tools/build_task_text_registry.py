@@ -21,6 +21,7 @@ from inner.tasks.eft_task import load_tasks  # noqa: E402
 
 
 def main() -> None:
+    check = "--check" in sys.argv[1:]      # compare the snapshot with the committed registry instead of rewriting it
     registry = {}
     for t in load_tasks():
         registry[t.task_id] = {
@@ -28,8 +29,15 @@ def main() -> None:
             "initial_program_sha256": hashlib.sha256(t.initial_program.encode()).hexdigest(),
         }
     out = Path(os.environ.get("SAH_TASK_TEXT_REGISTRY", str(ROOT / "config" / "task_text_registry.json")))
+    if check:
+        pinned = json.loads(out.read_text()).get("tasks", {}) if out.is_file() else {}
+        bad = [tid for tid, row in registry.items() if pinned.get(tid) not in (None, row)]
+        unpinned = [tid for tid in registry if tid not in pinned]
+        print(f"{len(registry)} tasks loaded; {len(registry) - len(bad) - len(unpinned)} match the registry, "
+              f"{len(unpinned)} unpinned, {len(bad)} MISMATCH" + (": " + ", ".join(bad) if bad else ""))
+        raise SystemExit(1 if bad else 0)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"schema": "task-text-registry/1.0", "tasks": registry}, indent=1, sort_keys=True))
+    out.write_text(json.dumps({"schema": "task-text-registry/1.0", "tasks": registry}, indent=1, sort_keys=True) + "\n")
     print(f"wrote {out} ({len(registry)} tasks)")
 
 

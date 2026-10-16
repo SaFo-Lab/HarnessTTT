@@ -1,6 +1,6 @@
 """Outer loop (M_phi + H1 -> new H2) for the self_adapt_harness project.
 
-Terminology (plan.md §2):
+Terminology:
   * Inner loop:  M0 + H2 -> solution + reward       (src/inner)
   * Outer loop:  M_phi + H1 -> candidate H2 packages (this package)
 
@@ -18,5 +18,5 @@ Per round:
   5. GRPO updates ONLY phi (src/training). Best candidate becomes the next
      round's H2 baseline.
 
-M0 is never updated (plan.md §0).
+M0 is never updated.
 """

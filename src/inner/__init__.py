@@ -1,6 +1,6 @@
 """Inner loop (M0 + H2) for the self_adapt_harness project.
 
-Terminology (plan.md §2):
+Terminology:
   * Inner loop:  M0 + H2 -> solution + reward   (this package)
   * Outer loop:  M_phi + H1 -> new H2           (the proposer; not built here)
 

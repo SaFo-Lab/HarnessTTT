@@ -3,8 +3,7 @@
 The inner harness runs a NexAU agent whose tools operate on a single
 :class:`InnerSession` held in a contextvar (mirrors the earlier runtime's RuntimeBridge
 pattern). The session owns the current candidate program, best-so-far tracking
-(the reward), and the external budget ledger (plan.md §8.4: usage is reserved
-and accounted here, never self-reported by the harness).
+(the reward), and the external budget ledger.
 """
 from __future__ import annotations
 
@@ -87,7 +86,7 @@ def classify_generated_tool_result(value: Any) -> Dict[str, Any]:
 
 @dataclass
 class BudgetLedger:
-    """External accounting of every model/evaluator call (plan.md §8.4)."""
+    """External accounting of every model/evaluator call."""
 
     max_evaluator_calls: int = 10
     evaluator_calls: int = 0

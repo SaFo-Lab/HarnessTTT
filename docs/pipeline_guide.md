@@ -20,7 +20,7 @@ round r   scripts/pipeline/worker_round.sh   (2 GPUs for K=8, 2-3 h)      train 
 | path | content |
 |---|---|
 | `config/` | `env.sh` (the one environment file every script sources), `local.env` (site payload paths for your cluster, git-ignored; template `local.env.example`), `dependencies.lock.json` (pins + checksums of everything not in git), `finch_targets.json` (published reference scores used by the gap-normalised reward), `task_text_registry.json` (task-text hashes; rounds fail closed on a mismatch), `pipeline.yaml` (the evolve loop: task, arm, K, GPUs, max_round, budgets), `campaign.yaml` + `examples/` (knob documentation of the older campaign driver) |
-| `dataset/` | `self_adapt_harness/` evaluator snapshot: task specs, initial programs, evaluators, AHC shim (1.5 GB, git-ignored; `dataset/README.md`) |
+| `dataset/` | `self_adapt_harness/` evaluator snapshot: task specs, initial programs, evaluators, AHC shim (git-ignored, built by `scripts/setup/setup_dataset.py`; `dataset/README.md`) |
 | `scripts/pipeline/` | the online-training loop: `worker_round.sh`, `train_worker.sh`, `chain.sh`, `build_bases.py`, `templates/{round,train}.sbatch`, `monitor.sh`, `status.py`, `restart_from.sh`, `vllm_protocol.py`, `audit_trajectories.py` -- see `scripts/pipeline/README.md` |
 | `scripts/setup/` | `setup_slime.sh` (official slime clone, pin, patch), `setup_deps.sh` (NexAU + Megatron-LM), `preflight.sh` |
 | `scripts/patches/` | `slime/openclaw_rl_f48ac35_on_slime_58ee7489.patch` (OpenClaw-RL's Qwen3.5 / FSDP-LoRA changes + SAH's seven training patches against official slime), `nexau/nexau_transport.patch` |
@@ -42,7 +42,7 @@ added only for the training job.  Every hard-coded path of the original repo now
 cp config/local.env.example config/local.env      # edit: model, image, envs, NexAU, Megatron-LM, RUN_ROOT, Slurm account
 bash scripts/setup/setup_slime.sh                 # git clone https://github.com/THUDM/slime.git slime; checkout 58ee7489; apply patch; verify needles
 bash scripts/setup/setup_deps.sh                  # NexAU 09e747b + transport patch, Megatron-LM core_v0.16.0 (skipped when local.env points at existing checkouts)
-rsync -a <snapshot>/self_adapt_harness/ dataset/self_adapt_harness/    # manifest sha256 in config/dependencies.lock.json
+python3 scripts/setup/setup_dataset.py --tiers core,gpu                  # builds dataset/self_adapt_harness from pinned public sources; manifest sha256 in config/dependencies.lock.json
 bash scripts/setup/preflight.sh                   # HARNESSTTT_HOST_PYTHON=<python with PyYAML> enables the import probe on a login node
 git commit                                        # jobs refuse to start from a dirty tree and record the commit in every round
 ```
@@ -55,7 +55,7 @@ are site payloads referenced from `local.env`; they are not copied into the tree
 
 ```bash
 # 1. describe the lineage (task, advantage arm, K, GPUs, max_round, ...): copy one of config/pipelines/*.yaml or edit config/pipeline.yaml
-cp config/pipelines/hadamard_v3.yaml config/pipelines/my_run.yaml
+cp config/pipelines/hadamard.yaml config/pipelines/my_run.yaml
 # 2. start (or resume) the evolve loop; progress is printed live and written to <run>/pipeline.log + progress.json
 python3 src/pipeline.py config/pipelines/my_run.yaml                 # blocking; use tmux/nohup for long campaigns
 python3 src/pipeline.py config/pipelines/my_run.yaml status          # table: per round valid/8, best candidate, incumbent, accepted, update, durations
@@ -76,7 +76,7 @@ for capacity instead of exceeding it.  State lives in the run dir, so a killed r
 job; `pipeline.lock` prevents two runners on one lineage.
 
 By default (`freeze: true`) the jobs execute from an immutable `git worktree` of the committed HEAD under
-`$RUN_ROOT/<campaign>/worktrees/htt_<sha>` (with `slime` and `dataset/self_adapt_harness` linked in), so this tree stays
+`$RUN_ROOT/<campaign>/worktrees/htt_<sha>` (with `slime`, `dataset/self_adapt_harness`, `.deps` and `config/local.env` linked in), so this tree stays
 editable while a campaign runs; the tree must be committed and clean when the loop starts.  The job-side alternative
 (`scripts/pipeline/chain.sh`, sbatch epilogues chaining round -> train -> round without a login-node process) remains
 available and is documented in `scripts/pipeline/README.md`.

@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Narrow Docker-CLI compatibility shim for the pinned SimpleTES AHC evaluator.
+
+The upstream evaluator only uses ``docker run`` to invoke its bundled
+``docker_runner.py`` with three read-only bind mounts. Pyxis/enroot Slurm jobs do not
+expose a Docker daemon, so this shim validates that exact invocation, maps the
+container paths back to their already-mounted host paths, and execs the
+runner in the current job container. It intentionally supports no general
+Docker operations.
+"""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+
+EXPECTED_IMAGE = "yimjk/ale-bench:cpp20-202301"
+
+
+def fail(message: str) -> "NoReturn":
+    print(f"AHC Docker compatibility shim: {message}", file=sys.stderr)
+    raise SystemExit(125)
+
+
+def translate(path: str, mounts: dict[str, str]) -> str:
+    for guest, host in sorted(mounts.items(), key=lambda item: len(item[0]), reverse=True):
+        if path == guest:
+            return host
+        prefix = guest.rstrip("/") + "/"
+        if path.startswith(prefix):
+            return str(Path(host) / path[len(prefix):])
+    fail(f"unmapped container path: {path}")
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if not args or args.pop(0) != "run":
+        fail("only the evaluator's docker run command is supported")
+
+    mounts: dict[str, str] = {}
+    image = None
+    while args:
+        token = args.pop(0)
+        if token == "--rm" or token.startswith("--network="):
+            continue
+        if token == "--cpuset-cpus":
+            if not args:
+                fail("--cpuset-cpus is missing its value")
+            args.pop(0)  # Slurm already constrains the job CPU set.
+            continue
+        if token == "-v":
+            if not args:
+                fail("-v is missing its mount specification")
+            fields = args.pop(0).split(":")
+            if len(fields) not in (2, 3) or (len(fields) == 3 and fields[2] != "ro"):
+                fail("only read-only bind mounts are supported")
+            host, guest = fields[:2]
+            if not Path(host).exists():
+                fail(f"bind source does not exist: {host}")
+            mounts[guest] = host
+            continue
+        if token.startswith("-"):
+            fail(f"unsupported docker option: {token}")
+        image = token
+        break
+
+    if image != EXPECTED_IMAGE:
+        fail(f"unexpected image {image!r}")
+    if len(args) != 8 or args[0:2] != ["python3", "/runner.py"]:
+        fail(f"unexpected evaluator command: {args!r}")
+
+    runner = translate(args[1], mounts)
+    cpp_file = translate(args[2], mounts)
+    input_dir = translate(args[3], mounts)
+    tester = translate(args[4], mounts)
+    python = os.environ.get("SAH_PYTHON") or sys.executable
+    os.execv(
+        python,
+        [python, runner, cpp_file, input_dir, tester, *args[5:]],
+    )
+
+
+if __name__ == "__main__":
+    main()

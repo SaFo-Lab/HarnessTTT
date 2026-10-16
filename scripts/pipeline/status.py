@@ -3,11 +3,19 @@
 metric), training state (updates / failures) and the current Slurm job.
 
 usage: status.py --root <dir with one run dir per arm> [--arms a b ...] [--rmax 15] [--ref label=<frozen lineage run dir> ...]
-Display units: cp26 -> sum_radii (score x 2.635), hadamard -> det_ratio (raw); any other task -> raw score."""
-import argparse, json, os, subprocess, time
+Display units and task aliases come from src/pipeline.py (DISPLAY / TASK_IDS): cp26 -> sum_radii, hadamard -> det_ratio,
+kernel tasks -> µs; any other task -> raw combined_score."""
+import argparse, json, os, subprocess, sys, time
 
-DISPLAY = {"eft__math__circle_packing": (lambda c: c * 2.635, "sum_radii"), "eft__math__hadamard_maximal_det": (lambda c: c, "det_ratio")}
-ALIAS = {"cp26": "eft__math__circle_packing", "hadamard": "eft__math__hadamard_maximal_det"}
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
+from pipeline import DISPLAY as _DISPLAY, TASK_IDS as ALIAS, fmt_metric  # noqa: E402  (one alias/display table for every tool)
+
+
+def _conv(kind, c):
+    return lambda score: fmt_metric(kind, c, score)
+
+
+DISPLAY = {tid: (_conv(kind, c), unit) for tid, (kind, c, unit) in _DISPLAY.items()}
 
 
 def best_after(run, tid, conv, r):

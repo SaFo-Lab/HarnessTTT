@@ -7,8 +7,7 @@ USER message, retains an offline feedback formatter, and hashes the package for
 provenance. Feedback is never injected into proposer-policy GRPO context.
 Renamed from ``h1.py`` (that name wrongly implied it *was* H1).
 
-It builds the round-varying USER message for ONE task instance (plan.md §2.2:
-H_j ~ pi_phi(H | tau, H1)): the task's public spec, its seed program (excerpt),
+It builds the round-varying USER message for ONE task instance): the task's public spec, its seed program (excerpt),
 the current best harness spec for this task, and its scores.
 """
 from __future__ import annotations

@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Narrow GNU-time shim for the pinned SimpleTES AHC runner.
+
+The container image has no /usr/bin/time. SimpleTES only needs
+``time -f FORMAT -o PROFILE COMMAND...`` and parses one JSON profile. This
+shim deliberately accepts only that shape, runs the command without a shell,
+records child resource usage, and propagates its exit status.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import resource
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+QUOTED_FORMAT = (
+    '{"exit_status": "%x", "elapsed_time_seconds": "%e", '
+    '"user_cpu_seconds": "%U", "system_cpu_seconds": "%S", '
+    '"max_resident_set_size_kbytes": "%M"}'
+)
+UNQUOTED_FORMAT = (
+    "{exit_status: %x, elapsed_time_seconds: %e, "
+    "user_cpu_seconds: %U, system_cpu_seconds: %S, "
+    "max_resident_set_size_kbytes: %M}"
+)
+
+
+def fail(message: str) -> "NoReturn":
+    print(f"AHC time compatibility shim: {message}", file=sys.stderr)
+    raise SystemExit(125)
+
+
+def parse(argv: list[str]) -> tuple[Path, list[str]]:
+    if argv == ["--version"]:
+        print("AHC time compatibility shim 1")
+        raise SystemExit(0)
+    if len(argv) < 5 or argv[0] != "-f" or argv[2] != "-o":
+        fail(f"unsupported invocation: {argv!r}")
+    # The upstream runner interpolates JSON quotes into a nested shell command;
+    # bash removes those inner quotes before invoking GNU time.
+    if argv[1] not in (QUOTED_FORMAT, UNQUOTED_FORMAT):
+        fail("unexpected profile format")
+    profile = Path(argv[3])
+    command = argv[4:]
+    if not command or not os.path.isabs(command[0]):
+        fail("the timed command must use an absolute executable path")
+    return profile, command
+
+
+def main() -> None:
+    profile, command = parse(sys.argv[1:])
+    before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    started = time.perf_counter()
+    try:
+        completed = subprocess.run(command, check=False)
+        returncode = completed.returncode
+    except FileNotFoundError:
+        returncode = 127
+    elapsed = time.perf_counter() - started
+    after = resource.getrusage(resource.RUSAGE_CHILDREN)
+
+    user_s = max(0.0, after.ru_utime - before.ru_utime)
+    system_s = max(0.0, after.ru_stime - before.ru_stime)
+    max_rss_kib = max(0, int(after.ru_maxrss))
+    status = 128 - returncode if returncode < 0 else returncode
+    payload = {
+        "exit_status": str(status),
+        "elapsed_time_seconds": f"{elapsed:.6f}",
+        "user_cpu_seconds": f"{user_s:.6f}",
+        "system_cpu_seconds": f"{system_s:.6f}",
+        "max_resident_set_size_kbytes": str(max_rss_kib),
+    }
+
+    prefix = ""
+    if returncode < 0:
+        prefix = f"Command terminated by signal {-returncode}\n"
+    elif returncode != 0:
+        prefix = f"Command exited with non-zero status {returncode}\n"
+    profile.write_text(prefix + json.dumps(payload, separators=(",", ":")) + "\n")
+
+    if returncode < 0:
+        raise SystemExit(128 + (-returncode))
+    raise SystemExit(returncode)
+
+
+if __name__ == "__main__":
+    main()

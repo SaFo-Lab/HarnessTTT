@@ -1,0 +1,7 @@
+simpletes/construction.py and simpletes/utils/text.py are copied verbatim from:
+  repository: https://github.com/wq-will/SimpleTES.git
+  commit: b7e0367b5ab19554fb40859e8069e091bb8c4ca2
+
+The two __init__.py files are intentionally minimal so evaluator subprocesses
+do not import the full SimpleTES engine or its LLM dependencies.
+

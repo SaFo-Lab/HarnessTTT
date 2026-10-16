@@ -7,7 +7,7 @@ Modes
 default     : run the H2 NexAU agent (Qwen3.5-9B via a vLLM endpoint) per task.
 
 Outputs a per-task result JSON + a summary.json/summary.csv under --out, with
-run provenance (plan.md §21).
+run provenance.
 
 Examples
 --------
@@ -105,8 +105,8 @@ def _agent_run(task: EFTTask, args, out_dir: Path) -> dict:
     ep = LLMEndpoint(model=args.model, base_url=args.base_url, api_key=args.api_key,
                      temperature=args.temperature, top_p=args.top_p, max_tokens=args.max_tokens,
                      timeout=args.llm_timeout, max_retries=args.llm_max_retries,
-                     enable_thinking=args.thinking,
-                     seed=args.seed)
+                     enable_thinking=(None if args.no_vllm_extras else args.thinking),
+                     seed=args.seed, vllm_extras=not args.no_vllm_extras)
     if args.max_iters > 0:
         max_iters = args.max_iters
     elif args.harness_dir:
@@ -185,6 +185,9 @@ def main() -> None:
     ap.add_argument("--llm-timeout", type=float, default=600.0)
     ap.add_argument("--llm-max-retries", type=int, default=2)
     ap.add_argument("--thinking", action="store_true", help="enable Qwen thinking (default off)")
+    ap.add_argument("--no-vllm-extras", action="store_true",
+                    help="do not send vLLM-only request fields (top_k, chat_template_kwargs, ...); required for OpenAI-compatible "
+                         "APIs that are not vLLM, e.g. api.openai.com")
     ap.add_argument("--seed", type=int, default=None,
                     help="explicit decode seed recorded in every H2 result")
     # budget / eval
