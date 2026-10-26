@@ -9,9 +9,9 @@ pip install -e ".[dev]"
 pytest scripts/tests                     # contract tests; the whole evolve loop runs against a fake Slurm, no GPUs needed
 ```
 
-Tests that need the task snapshot (`dataset/self_adapt_harness`, built by `scripts/setup/setup_dataset.py`) or the pinned
-NexAU runtime (Python 3.12, `scripts/setup/setup_deps.sh`) skip or fail with an import error when those are absent; the
-pipeline, dataset-recipe, API and template tests run everywhere.
+The suite runs on a fresh clone without the task snapshot or the NexAU runtime: the fake-Slurm loop uses a one-task fixture
+snapshot (`scripts/tests/site_env.py`), and the few tests that need NexAU (Python 3.12) skip when it is absent.  With the real
+snapshot built (`scripts/setup/setup_dataset.py`) the task-registry tests run against it as well.
 
 ## What is welcome
 

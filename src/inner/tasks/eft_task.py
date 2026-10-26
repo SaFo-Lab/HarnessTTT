@@ -109,8 +109,8 @@ def _load_eft_task(rec: Dict, default_timeout: float = 360.0) -> Optional[EFTTas
             diff_based = bool(cfg.get("diff_based_generation", True))
             timeout = float((cfg.get("evaluator") or {}).get("timeout", default_timeout))
             max_iter = int(cfg.get("max_iterations", 100))
-        except Exception:
-            pass
+        except Exception as e:
+            raise ValueError(f"{cfg_path}: cannot read the task configuration ({type(e).__name__}: {e})") from None
     if rec.get("per_eval_timeout_s") is not None:   # a manifest record may override the task's config.yaml timeout
         timeout = float(rec["per_eval_timeout_s"])
     return EFTTask(

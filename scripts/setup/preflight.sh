@@ -26,9 +26,9 @@ if [ "$TRAIN" = 0 ]; then ok "training stack skipped (--executor-only)"
 elif [ -d "$SLIME_ROOT/.git" ]; then
   exp=$(field slime.commit); obs=$(git -C "$SLIME_ROOT" rev-parse HEAD); [ "$obs" = "$exp" ] && ok "slime pinned at $obs" || bad "slime revision $obs != $exp"
   git -C "$SLIME_ROOT" remote get-url origin | grep -q 'THUDM/slime' && ok "slime remote is the official THUDM/slime" || bad "slime remote is not THUDM/slime"
-  while IFS=$'\t' read -r rel needle; do grep -Fq -- "$needle" "$SLIME_ROOT/$rel" && ok "slime patch: $needle" || bad "slime patch: $needle ($rel)"; done \
-    < <(python3 -c 'import json,sys
+  needles=$(python3 -c 'import json,sys
 for rel, needle in json.load(open(sys.argv[1]))["slime"]["required_needles"]: print(f"{rel}\t{needle}")' "$LOCK")
+  while IFS=$'\t' read -r rel needle; do grep -Fq -- "$needle" "$SLIME_ROOT/$rel" && ok "slime patch: $needle" || bad "slime patch: $needle ($rel)"; done <<< "$needles"
 else bad "slime checkout: $SLIME_ROOT (run scripts/setup/setup_slime.sh)"; fi
 # --- dataset ---
 req_dir "$SAH_DATA_ROOT" "evaluator snapshot"
@@ -38,9 +38,9 @@ req_entry "$SAH_AHC_NATIVE_BIN/docker" "AHC docker shim"
 # --- external code ---
 if [ -d "$NEXAU_ROOT" ]; then
   [ -d "$NEXAU_ROOT/.git" ] && { obs=$(git -C "$NEXAU_ROOT" rev-parse HEAD); [ "$obs" = "$(field nexau.commit)" ] && ok "NexAU pinned at $obs" || bad "NexAU revision $obs != $(field nexau.commit)"; }
-  while IFS=$'\t' read -r rel needle; do grep -Fq -- "$needle" "$NEXAU_ROOT/$rel" && ok "NexAU patch: $needle" || bad "NexAU patch: $needle"; done \
-    < <(python3 -c 'import json,sys
+  needles=$(python3 -c 'import json,sys
 for rel, needle in json.load(open(sys.argv[1]))["nexau"]["needles"]: print(f"{rel}\t{needle}")' "$LOCK")
+  while IFS=$'\t' read -r rel needle; do grep -Fq -- "$needle" "$NEXAU_ROOT/$rel" && ok "NexAU patch: $needle" || bad "NexAU patch: $needle"; done <<< "$needles"
 else bad "NexAU: $NEXAU_ROOT (run scripts/setup/setup_deps.sh --nexau)"; fi
 if [ "$TRAIN" = 1 ]; then
   [ -f "$MEGATRON_ROOT/megatron/core/package_info.py" ] && ok "Megatron-LM: $MEGATRON_ROOT ($(grep -E '^(MAJOR|MINOR|PATCH|PRE_RELEASE)' "$MEGATRON_ROOT/megatron/core/package_info.py" | tr -d ' ' | tr '\n' ' '))" || bad "Megatron-LM: $MEGATRON_ROOT"

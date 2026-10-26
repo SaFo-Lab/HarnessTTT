@@ -23,6 +23,12 @@ ESCAPES = (
     "def run(ctx, args):\n    return '{0._secret}'.format(ctx)",
     "def run(ctx, args):\n    return '{x[__class__]}'.format_map({'x': {}})",
     "import pandas as pd\ndef run(ctx, args):\n    return pd.DataFrame({'a': [1]}).eval('a.__class__')",
+    # numpy / pandas file-I/O and codegen reachable as plain attributes (round-4 escape)
+    "import numpy as np\ndef run(ctx, args):\n    return list(np.fromregex('/etc/hostname', r'(.+)', [('w','U80')])['w'])",
+    "import numpy as np\ndef run(ctx, args):\n    np.array([1]).dump('/tmp/x.bin'); return 'w'",
+    "import numpy as np\ndef run(ctx, args):\n    return np.DataSource('/tmp').open('/etc/hostname').read()",
+    "import numpy as np\ndef run(ctx, args):\n    return np.f2py.compile(b'x')",
+    "import pandas as pd\ndef run(ctx, args):\n    return pd.HDFStore('/tmp/x.h5')",
 )
 
 
@@ -32,6 +38,16 @@ class StaticGateEscapeTest(unittest.TestCase):
             ok, errors = check_tool_code(code)
             self.assertFalse(ok, code)
             self.assertTrue(errors, code)
+
+    def test_code_building_tool_with_dunder_placeholders_passes(self):
+        # the released circle_packing_n26 hexagonal_construction tool builds a program string and substitutes
+        # "__ROW_COUNTS__" / "__REFINEMENT_PASSES__" placeholders: a string literal with "__" is not an escape
+        src = ("def run(ctx, args):\n"
+               "    template = 'x = __N__\\nif __name__ == \"m\": pass\\n'\n"
+               "    code = template.replace('__N__', repr(args.get('n', 1)))\n"
+               "    return ctx.stage_edit(code) if ctx else code")
+        ok, errs = check_tool_code(src)
+        self.assertTrue(ok, errs)
 
     def test_sentinels_are_rejected_in_middleware_hooks(self):
         from outer.safety.static_gates import check_middleware_code

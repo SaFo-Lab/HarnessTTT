@@ -1,4 +1,6 @@
 #!/bin/bash
+# LEGACY (job-side chain.sh driver): clean restart of one arm from round N.  With the supported runner (src/pipeline.py) a restart
+# is `python3 src/pipeline.py <config>` after removing/archiving the rounds you want redone; RETRIES.json is the runner's retry record.
 # Clean restart of one arm from round N (lineage state = after round N-1), e.g. after an infrastructure contamination.
 # Archives rounds >= N and training >= N into <run>/{rounds,training}_contaminated_<stamp>/ (never deletes), restores the registry files
 # from the round-(N-1) snapshots, truncates the component ledger to rounds < N, clears the markers and re-enters the chain at

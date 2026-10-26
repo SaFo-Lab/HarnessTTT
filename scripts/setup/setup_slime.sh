@@ -28,9 +28,10 @@ else
   echo "patch neither applies nor is applied cleanly; inspect $SLIME_ROOT (git status / git diff)" >&2; exit 2
 fi
 fail=0
+needles=$(python3 -c 'import json,sys
+for rel, needle in json.load(open(sys.argv[1]))["slime"]["required_needles"]: print(f"{rel}\t{needle}")' "$LOCK")   # a failing python3 aborts here (set -e)
 while IFS=$'\t' read -r rel needle; do
   grep -Fq -- "$needle" "$SLIME_ROOT/$rel" && echo "[ok] $rel: $needle" || { echo "[missing] $rel: $needle" >&2; fail=1; }
-done < <(python3 -c 'import json,sys
-for rel, needle in json.load(open(sys.argv[1]))["slime"]["required_needles"]: print(f"{rel}\t{needle}")' "$LOCK")
+done <<< "$needles"
 [ "$fail" = 0 ] || exit 2
 echo "slime ready: $SLIME_ROOT @ $(git -C "$SLIME_ROOT" rev-parse --short HEAD) (official $URL) + HarnessTTT patch"

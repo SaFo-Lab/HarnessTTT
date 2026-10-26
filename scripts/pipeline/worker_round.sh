@@ -231,7 +231,11 @@ for g in $(seq 0 $((N_REPLICAS - 1))); do
   VPIDS+=("$!")
 done
 cleanup(){ set +e; kill "$WATCHDOG_PID" 2>/dev/null; for p in "${VPIDS[@]}"; do kill -TERM -- "-$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null; done; sleep 5; for p in "${VPIDS[@]}"; do kill -KILL -- "-$p" 2>/dev/null; done; }
-trap cleanup EXIT INT TERM
+# Slurm's TERM (round.sbatch --signal=TERM@900, 15 min before the wall limit) ends the job: leave a WALL_LIMIT marker so the
+# runner stops instead of resubmitting the same round; the watchdog's TERM (a stall, $RUN_DIR/STALLED written first) stays a stall.
+on_term(){ if [ ! -e "$RUN_DIR/STALLED" ]; then date -Is > "$ROUND_DIR/WALL_LIMIT" 2>/dev/null; echo "[worker] SIGTERM from Slurm: wall limit approaching, stopping round $ROUND" >&2; fi; cleanup; exit 143; }
+trap cleanup EXIT INT
+trap on_term TERM
 for g in $(seq 0 $((N_REPLICAS - 1))); do
   port=$((PORT_BASE + g)); ok=0; foreign=0
   for _ in $(seq 1 240); do

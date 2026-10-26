@@ -461,11 +461,11 @@ class SlurmPortabilityTest(unittest.TestCase):
         os.environ["FAKE_SLURM_DIR"] = str(self.tmp / "slurm")
         os.environ["FAKE_STEP_SECONDS"] = "0.05"
         for key in ("FAKE_FAIL_ROUNDS", "FAKE_ZERO_ADV_ROUNDS", "FAKE_FAIL_TRAIN", "FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL",
-                    "FAKE_PROLOGUE_FAIL_ROUNDS", "FAKE_TIMEOUT_ROUNDS"):
+                    "FAKE_PROLOGUE_FAIL_ROUNDS", "FAKE_TIMEOUT_ROUNDS", "FAKE_WALL_SIGNAL_ROUNDS"):
             os.environ.pop(key, None)
 
     def tearDown(self):
-        for key in ("FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL", "FAKE_PROLOGUE_FAIL_ROUNDS", "FAKE_TIMEOUT_ROUNDS"):
+        for key in ("FAKE_NO_ACCOUNTING", "FAKE_TEST_ONLY_FAIL", "FAKE_PROLOGUE_FAIL_ROUNDS", "FAKE_TIMEOUT_ROUNDS", "FAKE_WALL_SIGNAL_ROUNDS"):
             os.environ.pop(key, None)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -541,7 +541,7 @@ class SlurmPortabilityTest(unittest.TestCase):
             runner.run_loop()
         self.assertIn("failed before srun", str(ctx.exception))
         self.assertIn("container image SAH_IMAGE", str(ctx.exception))
-        self.assertEqual(json.loads((runner.run / "RETRIES.json").read_text()).get("round1"), 1, "not retried")
+        self.assertEqual(json.loads((runner.run / "RETRIES.json").read_text()).get("round1"), 0, "a configuration stop is refunded")
 
     def test_timeout_is_not_resubmitted_unchanged(self):
         os.environ["FAKE_TIMEOUT_ROUNDS"] = "1"
@@ -552,15 +552,24 @@ class SlurmPortabilityTest(unittest.TestCase):
         self.assertIn("round_time", str(ctx.exception))
 
     def test_worker_budgets_follow_round_time(self):
-        self.assertEqual(pipeline.wall_seconds("06:00:00"), 21600)
-        self.assertEqual(pipeline.wall_seconds("1-02:00:00"), 93600)
-        self.assertEqual(pipeline.wall_seconds("90"), 5400)
+        for text, want in (("06:00:00", 21600), ("1-02:00:00", 93600), ("1-02", 93600), ("1-02:30", 95400), ("90", 5400), ("05:30", 330),
+                           ("UNLIMITED", 10 * 365 * 86400)):
+            self.assertEqual(pipeline.wall_seconds(text), want, text)
         runner = pipeline.Runner(self.cfg(round_time="02:00:00"), quiet=True)
         script = Path(runner.dry_run()).read_text()
-        self.assertIn("SAH9B_PROPOSE_TIMEOUT=2880", script)       # 40 % of 2 h
-        self.assertIn("SAH9B_ROLLOUT_WALL_TIMEOUT=3240", script)  # 45 %
+        self.assertIn("SAH9B_PROPOSE_TIMEOUT=2142", script)       # 42 % of (2 h - 15 min signal window - 20 min fixed overhead)
+        self.assertIn("SAH9B_ROLLOUT_WALL_TIMEOUT=2550", script)  # 50 %
         self.assertIn("SAH9B_JOB_SECONDS=6300", script)           # 2 h - 15 min
         runner.release()
+
+    def test_wall_limit_signal_is_not_resubmitted(self):
+        os.environ["FAKE_WALL_SIGNAL_ROUNDS"] = "1"
+        runner = pipeline.Runner(self.cfg(), quiet=True)
+        with self.assertRaises(SystemExit) as ctx:
+            runner.run_loop()
+        self.assertIn("wall limit", str(ctx.exception))
+        self.assertIn("round_time", str(ctx.exception))
+        self.assertEqual(json.loads((runner.run / "RETRIES.json").read_text()).get("round1"), 0, "refunded")
 
     def test_training_skipped_by_the_runner_leaves_the_same_marker_as_the_worker(self):
         os.environ["FAKE_ZERO_ADV_ROUNDS"] = "1"

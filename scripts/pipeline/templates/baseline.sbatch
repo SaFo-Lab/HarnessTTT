@@ -29,7 +29,7 @@ export SAH9B_SEED_PROGRAMS_FILE=@@SEED_PROGRAMS@@ SAH9B_BASELINE_OUT=@@BASELINE_
 export SAH_RATCHET_EVAL_LIMITS='{"eft__math__hadamard_maximal_det":350}'
 # deadline for the worker: job start + wall limit - 15 min (a run that cannot finish before it is skipped; the table is
 # written after every completed run, so a job that runs out of time still leaves a usable baseline)
-IFS=: read -r _h _m _s <<< "@@TIME@@"; export SAH9B_BASELINE_DEADLINE_EPOCH=$(( $(date +%s) + 10#$_h * 3600 + 10#$_m * 60 + 10#$_s - 900 ))
+export SAH9B_BASELINE_DEADLINE_EPOCH=$(( $(date +%s) + @@BASELINE_SECONDS@@ - 900 ))   # wall limit @@TIME@@ parsed by the runner
 need(){ [ -e "$1" ] || { echo "[sbatch] missing: $2 ($1)" >&2; exit 64; }; }
 clean_tree(){ git -C "$1" diff --quiet --no-ext-diff HEAD -- || { echo "[sbatch] $1 has uncommitted changes" >&2; exit 64; }
   [ -z "$(git -C "$1" ls-files --others --exclude-standard)" ] || { echo "[sbatch] $1 has untracked files" >&2; exit 64; }; }

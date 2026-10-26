@@ -60,6 +60,14 @@ class RecipeTest(unittest.TestCase):
         self.assertTrue(any(rel.startswith("raw/eft-aac2e79/benchmarks/math/circle_packing/") for rel in checks))
         self.assertIn("runtime/ahc_native/bin/docker", checks)
 
+    def test_checksums_exclude_generated_task_data(self):
+        import fnmatch
+        sources = json.loads((CFG / "sources.json").read_text())
+        checks = json.loads((CFG / "CHECKSUMS.json").read_text())["files"]
+        for pattern in sources["generated_not_checksummed"]:
+            hits = [rel for rel in checks if fnmatch.fnmatch(rel, pattern) or rel.startswith(pattern.rstrip("*"))]
+            self.assertEqual(hits, [], pattern)
+
     def test_manifest_paths_are_variables_not_machines(self):
         manifest = json.loads((CFG / "MANIFEST_eft.json").read_text())
         for rec in manifest["tasks"] + manifest["cross_referenced_tasks"]:

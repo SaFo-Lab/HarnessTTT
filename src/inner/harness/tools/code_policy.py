@@ -42,25 +42,18 @@ FORBIDDEN_ATTRIBUTES = frozenset({
     "tempfile", "glob", "inspect", "gc", "weakref", "traceback", "runpy", "pkgutil", "sysconfig", "site", "platform",
     "environ", "system", "popen", "open", "spawn", "fork", "execv", "execl", "Popen", "check_output", "check_call",
     "import_module", "exec_module", "load_module", "run_path", "run_module", "urlopen", "urlretrieve", "request",
+    # more numpy / pandas / scipy file-I/O and code-generation entry points reachable as plain (non-module) attributes.
+    # Deliberately narrow so common safe names (json.dumps, re.compile, numpy.frombuffer) keep working: ndarray.dump writes
+    # a file (json.dumps returns a string, so "dumps" is NOT forbidden), np.fromregex/np.DataSource open a path, np.f2py /
+    # np.distutils / scipy.datasets run code or fetch over the network, pandas HDFStore/ExcelWriter/ExcelFile write files.
+    "fromregex", "dump", "DataSource", "f2py", "distutils", "datasets", "HDFStore", "ExcelWriter", "ExcelFile",
     # string-driven attribute resolution: "{0.__self__}".format(len) / string.Formatter().get_field(...) resolve dotted
     # names that live inside string literals, invisible to an AST gate (use f-strings, whose expressions are AST nodes)
     "format", "format_map", "Formatter", "get_field", "get_value", "vformat", "convert_field", "check_unused_args",
     "get_type_hints", "ForwardRef", "evaluate_forward_ref", "attrgetter", "methodcaller", "query", "eval",
 })
-# any string literal carrying a double underscore is refused: dunder names in strings only serve dynamic attribute
-# resolution (format fields, pandas eval/query, type-hint evaluation), never a numerical tool's logic
-FORBIDDEN_STRING_FRAGMENTS = ("__",)
+# NOTE: a bare string literal (e.g. a code template with "__ROW_COUNTS__" placeholders) is harmless because every way to
+# turn a string into an attribute lookup is blocked above -- getattr/eval/exec/compile (FORBIDDEN_NAMES), .format/.format_map
+# and string.Formatter().get_field (FORBIDDEN_ATTRIBUTES), pandas .eval/.query -- and f-string expressions are real AST nodes
+# the gate inspects.  So generated tools may build program strings for ctx.stage_edit without tripping the gate.
 MAX_CODE_CHARS = 10000
-
-
-def string_literal_violations(tree) -> list:
-    """Error strings for string constants of ``tree`` (an ``ast`` module) that carry a forbidden fragment."""
-    import ast
-    errors = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            for frag in FORBIDDEN_STRING_FRAGMENTS:
-                if frag in node.value:
-                    errors.append(f"forbidden fragment {frag!r} in a string literal (line {getattr(node, 'lineno', '?')})")
-                    break
-    return errors

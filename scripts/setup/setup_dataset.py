@@ -10,7 +10,9 @@ The recipe is config/dataset/sources.json: every repository is fetched at one co
 subtrees are copied, the locally authored files under config/dataset/overlay/ are laid over them (evaluator shims, the
 kernel tasks' initial programs and the leaderboard-protocol evaluator), the data files are downloaded and checked
 (sha256), and the manifest config/dataset/MANIFEST_eft.json is installed.  The result is verified file by file against
-config/dataset/CHECKSUMS.json.  Destination: --dest, else $SAH_DATA_ROOT, else <repo>/dataset/self_adapt_harness.
+config/dataset/CHECKSUMS.json.  Destination: --dest, else $SAH_DATASET_ROOT / $SAH_DATA_ROOT, else
+<repo>/dataset/self_adapt_harness.  The upstream checkouts (~215 MB) stay under <repo>/.deps/dataset_sources (--work) so a
+rebuild or an added tier reuses them; --clean-work removes them.  A snapshot that already verifies is left untouched.
 Only the standard library is needed.
 """
 from __future__ import annotations
@@ -60,12 +62,11 @@ def fetch_repo(name: str, url: str, commit: str, work: Path) -> Path:
     """A checkout of ``url`` at ``commit`` under ``work/name`` (reused when already there)."""
     repo = work / name
     if (repo / ".git").is_dir():
-        try:
-            if run(["git", "-C", str(repo), "rev-parse", "HEAD"]).stdout.strip() == commit:
-                log(f"{name}: reusing checkout {repo}")
-                return repo
-        except subprocess.CalledProcessError:
-            pass
+        probe = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True, capture_output=True)
+        if probe.returncode == 0 and probe.stdout.strip() == commit:
+            log(f"{name}: reusing checkout {repo}")
+            return repo
+        log(f"{name}: removing an incomplete or stale checkout at {repo}")
         shutil.rmtree(repo)
     repo.mkdir(parents=True)
     run(["git", "init", "-q", str(repo)])

@@ -15,7 +15,11 @@ token_budget: 18000        # replay bound before training (terminal-preserving)
 lr: 1e-5
 kl: 0.1
 over_cap_as_invalid: true  # OVERCAP-001: an over-cap program is an invalid proposal (-1), not a refused round
-round_time: "06:00:00"     # Slurm wall limits
+# round_cpus: 24             # CPUs / memory of a round job (default 12 CPUs and 75-100 GB per GPU)
+# round_mem: "200G"
+# train_cpus: 32             # CPUs / memory of the LoRA update job (default --mem=0 = the whole node)
+# train_mem: "0"
+round_time: "06:00:00"     # Slurm wall limits (the round job's propose/rollout budgets are derived from this)
 train_time: "02:30:00"
 poll_seconds: 60           # progress poll interval while a job runs
 heartbeat_minutes: 10      # print a progress line at least this often even without change

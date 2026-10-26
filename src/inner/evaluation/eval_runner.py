@@ -113,6 +113,7 @@ def evaluate_program(
     gpu_lock = _acquire_eval_gpu(env)  # GPU kernel tasks: one evaluation at a time per reserved GPU (timings need an idle GPU)
     t0 = time.time()
     timed_out = False
+    launch_error = None
     try:
         subprocess.run(
             [python_exe, str(_WORKER), str(req_path)],
@@ -121,11 +122,15 @@ def evaluate_program(
         )
     except subprocess.TimeoutExpired:
         timed_out = True
+    except OSError as e:   # the evaluator interpreter itself cannot be started (bad python_exe / eval_python)
+        launch_error = f"cannot start evaluator interpreter {python_exe}: {e}"
     finally:
         if gpu_lock is not None:
             gpu_lock.close()  # releases the flock
     dt = time.time() - t0
 
+    if launch_error:
+        return EvalOutcome(0.0, 0.0, launch_error, dt)
     if timed_out:
         return EvalOutcome(0.0, 0.0, f"Timeout after {hard_timeout:.0f}s", dt, timed_out=True)
     if not res_path.exists():

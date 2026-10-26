@@ -27,9 +27,9 @@ if [ "$DO_NEXAU" = 1 ]; then
   if git -C "$NEXAU_ROOT" apply --check --reverse "$PATCH" 2>/dev/null; then echo "NexAU patch already applied"
   elif git -C "$NEXAU_ROOT" apply --check "$PATCH" 2>/dev/null; then git -C "$NEXAU_ROOT" apply "$PATCH"; echo "NexAU patch applied"
   else echo "NexAU checkout $NEXAU_ROOT neither has the patch applied nor accepts it cleanly (local modifications?)" >&2; exit 2; fi
-  while IFS=$'\t' read -r rel needle; do grep -Fq -- "$needle" "$NEXAU_ROOT/$rel" || { echo "NexAU patch needle missing: $needle ($rel)" >&2; exit 2; }; done \
-    < <(python3 -c 'import json,sys
+  needles=$(python3 -c 'import json,sys
 for rel, needle in json.load(open(sys.argv[1]))["nexau"]["needles"]: print(f"{rel}\t{needle}")' "$LOCK")
+  while IFS=$'\t' read -r rel needle; do grep -Fq -- "$needle" "$NEXAU_ROOT/$rel" || { echo "NexAU patch needle missing: $needle ($rel)" >&2; exit 2; }; done <<< "$needles"
   echo "NexAU ready: $NEXAU_ROOT @ $(git -C "$NEXAU_ROOT" rev-parse --short HEAD) + nexau_transport.patch"
 fi
 if [ "$DO_MEG" = 1 ]; then

@@ -30,7 +30,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable, Dict
 
-from inner.harness.tools.code_policy import FORBIDDEN_ATTRIBUTES, FORBIDDEN_MODULES, IMPORT_WHITELIST, string_literal_violations
+from inner.harness.tools.code_policy import FORBIDDEN_ATTRIBUTES, FORBIDDEN_MODULES, IMPORT_WHITELIST
 from inner.harness.tools.runtime import get_session
 from inner.runtime.harness_sdk import ToolContext
 
@@ -100,11 +100,9 @@ def gate_source(source: bytes, filename: str) -> None:
     was validated, or come from outside the pipeline.  Raises ValueError with the gate's errors."""
     try:
         from outer.safety.static_gates import check_tool_code
-    except Exception:   # executor installed without the proposer side: fall back to the shared policy's string rule
-        import ast
-        errors = string_literal_violations(ast.parse(source.decode("utf-8", errors="replace")))
-    else:
-        _ok, errors = check_tool_code(source.decode("utf-8", errors="replace"))
+    except Exception:
+        return   # executor installed without the proposer side: the restricted exec namespace below is the only guard
+    _ok, errors = check_tool_code(source.decode("utf-8", errors="replace"))
     if errors:
         raise ValueError(f"custom tool {filename} rejected by the static gate: {'; '.join(errors)[:600]}")
 

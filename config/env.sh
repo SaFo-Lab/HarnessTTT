@@ -10,7 +10,9 @@ export SAH_ROOT="${SAH_ROOT:-$HARNESSTTT_ROOT}"                 # the SAH code r
 
 # --- in-tree components ---------------------------------------------------------------------------------------------
 export SLIME_ROOT="${SLIME_ROOT:-$HARNESSTTT_ROOT/slime}"      # official THUDM/slime @ pinned commit + scripts/patches/slime
-export SAH_DATA_ROOT="${SAH_DATA_ROOT:-$HARNESSTTT_ROOT/dataset/self_adapt_harness}"
+# the task snapshot: SAH_DATASET_ROOT (the loader's variable) and SAH_DATA_ROOT (the scripts') are one setting; either one set
+# by the caller or config/local.env relocates the snapshot
+export SAH_DATA_ROOT="${SAH_DATA_ROOT:-${SAH_DATASET_ROOT:-$HARNESSTTT_ROOT/dataset/self_adapt_harness}}"
 export SAH_DATASET_ROOT="${SAH_DATASET_ROOT:-$SAH_DATA_ROOT}"   # read by src/inner/tasks/eft_task.py
 export SAH_TASK_TEXT_REGISTRY="${SAH_TASK_TEXT_REGISTRY:-$HARNESSTTT_ROOT/config/task_text_registry.json}"
 export SAH_FINCH_TARGETS="${SAH_FINCH_TARGETS:-$HARNESSTTT_ROOT/config/finch_targets.json}"

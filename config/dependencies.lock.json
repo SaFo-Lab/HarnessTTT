@@ -79,7 +79,6 @@
   "path": "dataset/self_adapt_harness",
   "copied_from": "built by scripts/setup/setup_dataset.py from config/dataset/sources.json (pinned public commits + sha256-checked downloads)",
   "manifest_sha256": "c73471621eb6d60cb43ff7599252f9fe08cdcd8654af06377d6dc46593b34fee",
-  "provenance_sha256": "73f4254467d6669bf263a85456e8edf04fa3744c0c2fe926a2d1524309143062",
   "upstream": {
    "evolution-fine-tuning": "aac2e79be773715ab35b7945f5d9028e46675f02",
    "SimpleTES": "b7e0367b5ab19554fb40859e8069e091bb8c4ca2",
